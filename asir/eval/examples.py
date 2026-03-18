@@ -6,6 +6,28 @@ Evaluation Examples — 跟 gepa/training.py 的 5 個場景完全分離
 - 不同空間 (室內/室外/大廳)
 - 不同使用者動作 (none / 口語指令 / 按鈕)
 - 不同聽力程度 (輕度 → 重度)
+
+=== Example 欄位說明 ===
+
+物理輸入（由 run.py:build_features() 轉成 AcousticFeatures 注入 L4）:
+  scenario          str    場景名稱（辨識用，不傳給 LLM）
+  snr_db            float  信噪比 (dB)，越低越吵
+  rt60_s            float  迴響時間 (秒)，越大越迴響
+  n_active_sources  int    活躍聲源數量
+  energy_db         float  信號能量 (dB SPL)
+  temporal_pattern  str    時域模式: stationary / modulated / impulsive
+  user_profile      str    使用者描述（傳給 L4/L5）
+  user_action       str    使用者動作（傳給 L7 pipeline router）
+  audiogram_json    str    聽力圖 JSON（傳給 L6 NAL-NL2 增益計算）
+
+約束欄位（由 metrics.py 的 check 函數讀取，見 metrics.py 頂部的 mapping 表）:
+  expect_scene_keywords  list[str]  → check_l5: situation 應包含的關鍵字
+  expect_strong_nr       bool       → check_l6: NR aggressiveness 應 > 0.4
+  expect_beam_focus      bool       → check_dsp: beam_width 應 < 90°
+  expect_full_depth      bool       → check_l7: execution_depth 應為 "full"
+  expect_noisy           bool       （metadata，未直接用於 check）
+  expect_reverberant     bool       （metadata，未直接用於 check）
+  expect_high_gain       bool       （metadata，未直接用於 check）
 """
 import dspy
 

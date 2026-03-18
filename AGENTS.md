@@ -39,18 +39,18 @@ PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
 ## Testing & Evaluation
 
-After modifying any file, run the deterministic tests first:
+Two tools, each does one job:
 ```bash
-# Quick smoke test (no API key)
+# L1-L3: pytest (deterministic, no API key)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# Full eval including L4-L7 semantic layers (needs OPENAI_API_KEY in .env)
-PYTHONUTF8=1 python -X utf8 -m asir.eval --full
+# L4-L7: semantic eval (needs OPENAI_API_KEY in .env)
+PYTHONUTF8=1 python -X utf8 -m asir.eval
 ```
 
-- `tests/test_deterministic.py` — 17 pytest tests for L1-L3
-- `asir/eval/` — 8 eval scenarios + per-layer constraint metrics + runner
-- Eval output: per-layer scores + `eval_results.json`
+- L4-L7 eval 直接注入 AcousticFeatures 到 L4，繞過 L1-L3 隨機訊號
+- Constraint 欄位的對應見 `asir/eval/metrics.py` 頂部 mapping 表
+- 輸出: per-layer scores + `eval_results.json`
 
 ## Test Audio Files
 

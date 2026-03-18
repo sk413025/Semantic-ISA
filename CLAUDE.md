@@ -92,21 +92,24 @@ Full glossary: see `README.md` § 領域術語 Glossary (collapsible section)
 
 ## Evaluation
 
+Two tools, each does one job:
+
 ```bash
-# L1-L3 deterministic tests (no API key)
+# L1-L3: pytest (deterministic, no API key)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# L1-L3 inline eval (no API key)
+# L4-L7: semantic eval (needs OPENAI_API_KEY in .env)
 PYTHONUTF8=1 python -X utf8 -m asir.eval
-
-# Full L1-L7 eval (needs OPENAI_API_KEY in .env)
-PYTHONUTF8=1 python -X utf8 -m asir.eval --full
 ```
 
-- `tests/test_deterministic.py` — 17 pytest tests for L1-L3 (synthetic signals, numpy)
-- `asir/eval/examples.py` — 8 evaluation scenarios (separate from 5 training scenarios)
-- `asir/eval/metrics.py` — per-layer constraint checks (L4-L7), not exact match
-- `asir/eval/run.py` — runner, outputs per-layer scores + `eval_results.json`
+L4-L7 eval 的資料流：
+- `examples.py` 定義場景的物理參數 (SNR, RT60, audiogram...)
+- `run.py:build_features()` 把這些參數轉成 `AcousticFeatures` 直接注入 L4
+- composites (L4→L5→L6) 直接被呼叫，繞過 harness 的 L1-L3
+- `metrics.py` 檢查每層輸出的物理約束（不是 keyword exact match）
+- 最重要的 check: `check_dsp_output` — DSP 參數是否對這個場景/聽損合理
+
+Constraint 欄位的對應關係見 `metrics.py` 頂部的 mapping 表。
 
 ## Dependencies
 
