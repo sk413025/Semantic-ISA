@@ -2,25 +2,16 @@
 ASIR Semantic Layer Evaluation (L4-L7)
 
 用法:
-  PYTHONUTF8=1 python -X utf8 -m asir.eval          # needs OPENAI_API_KEY in .env
-  PYTHONUTF8=1 python -X utf8 -m asir.eval --verbose # 顯示完整 trace
+  PYTHONUTF8=1 python -X utf8 -m asir.eval
+  PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
 
-設計原則:
-  - 直接注入 AcousticFeatures → L4，繞過 L1-L3 的隨機訊號
-  - 每個 example 的物理參數 (SNR, RT60...) 會被 LLM 直接看到
-  - constraint checks 測的是物理合理性，不是 keyword exact match
-
-資料流:
-  example (snr_db, rt60_s, ...) → build_features() → AcousticFeatures
-  → L4 (perceptual_desc) → L5 (scene_understanding) → L6 (strategy_gen)
-  → comp_strategy_to_dsp_params → DSPParameterSet
-  → check_l4 / check_l5 / check_l6 / check_dsp_output / check_l7_routing
-
-★ v0.9: 支援 --verbose (完整 trace) + --program (載入優化後 program)
+結果記錄到 MLflow（mlflow ui 查看歷史與比較）。
 """
 import sys
 import os
 import json
+
+import mlflow
 
 from asir.eval.examples import create_eval_examples
 from asir.eval.metrics import (
@@ -43,12 +34,7 @@ def _load_env():
 
 
 def build_features(ex):
-    """
-    把 eval example 的物理參數轉成 AcousticFeatures，直接注入 L4。
-
-    這是 v0.5.1 的核心改善：example 定義的 snr_db=3.0 會直接出現在
-    LLM 看到的 features string 裡，而不是被隨機噪音覆蓋。
-    """
+    """把 eval example 的物理參數轉成 AcousticFeatures，直接注入 L4。"""
     from asir.types import AcousticFeatures
 
     snr = float(ex.snr_db)
@@ -56,7 +42,6 @@ def build_features(ex):
     n_src = int(ex.n_active_sources)
     pattern = str(ex.temporal_pattern)
 
-    # 根據場景特性生成合理的 MFCC summary
     if snr < 5 or n_src > 3:
         dist = "broadband"
         centroid_bins = 400
@@ -83,62 +68,107 @@ def build_features(ex):
     )
 
 
-def _print_trace(scenario, pred, failures_for_scenario):
-    """
-    ★ v0.9: 印出場景的推理 trace，用於 fail 時的根因分析。
+def _safe_float(val):
+    if val is None:
+        return None
+    try:
+        return round(float(val), 4)
+    except (ValueError, TypeError):
+        return None
 
-    只在有 failure 或 --verbose 時呼叫。
-    顯示 L4→L5→L6 的推理鏈 + DSP 關鍵數值，方便定位是哪一層導致問題。
-    """
-    print(f"\n    ┌─ Trace: {scenario}")
 
-    # L4 Perceptual
+def _build_trace(pred):
+    """從 prediction 提取結構化 trace dict，用於 console 印出和 MLflow 持久化。"""
+    trace = {}
+
     percept = getattr(pred, 'percept', None)
     if percept:
-        noise = str(getattr(percept, 'noise_description', ''))[:150]
-        speech = str(getattr(percept, 'speech_description', ''))[:100]
-        env = str(getattr(percept, 'environment_description', ''))[:100]
-        conf = getattr(percept, 'confidence', '?')
-        print(f"    │ L4 noise:  {noise}")
-        print(f"    │ L4 speech: {speech}")
-        print(f"    │ L4 env:    {env}")
-        print(f"    │ L4 conf:   {conf}")
+        trace["L4"] = {
+            "noise_description": str(getattr(percept, 'noise_description', '')),
+            "speech_description": str(getattr(percept, 'speech_description', '')),
+            "environment_description": str(getattr(percept, 'environment_description', '')),
+            "confidence": _safe_float(getattr(percept, 'confidence', None)),
+        }
 
-    # L5 Scene
     scene = getattr(pred, 'scene', None)
     if scene:
-        sit = str(getattr(scene, 'situation', ''))[:200]
-        conf = getattr(scene, 'confidence', '?')
-        print(f"    │ L5 scene:  {sit}")
-        print(f"    │ L5 conf:   {conf}")
+        trace["L5"] = {
+            "situation": str(getattr(scene, 'situation', '')),
+            "confidence": _safe_float(getattr(scene, 'confidence', None)),
+        }
 
-    # L6 Strategy
     strategy = getattr(pred, 'strategy', None)
     if strategy:
-        az = getattr(strategy, 'target_azimuth_deg', '?')
-        bw = getattr(strategy, 'beam_width_deg', '?')
-        nr = getattr(strategy, 'nr_aggressiveness', '?')
-        cr = getattr(strategy, 'compression_ratio', '?')
-        reasoning = str(getattr(strategy, 'combined_reasoning', ''))[:200]
-        print(f"    │ L6 beam:   azimuth={az}°, width={bw}°")
-        print(f"    │ L6 NR:     agg={nr}")
-        print(f"    │ L6 comp:   ratio={cr}")
-        print(f"    │ L6 reason: {reasoning}")
+        trace["L6"] = {
+            "beam_azimuth_deg": _safe_float(getattr(strategy, 'target_azimuth_deg', None)),
+            "beam_width_deg": _safe_float(getattr(strategy, 'beam_width_deg', None)),
+            "nr_aggressiveness": _safe_float(getattr(strategy, 'nr_aggressiveness', None)),
+            "compression_ratio": _safe_float(getattr(strategy, 'compression_ratio', None)),
+            "reasoning": str(getattr(strategy, 'combined_reasoning', '')),
+        }
 
-    # DSP params
     dsp = getattr(pred, 'dsp_params', None)
     if dsp:
         mask = getattr(dsp, 'noise_mask', None)
         if mask and isinstance(mask, (list, tuple)) and len(mask) > 0:
             mask_vals = [float(v) for v in mask]
-            print(f"    │ DSP mask:  min={min(mask_vals):.3f}, "
-                  f"max={max(mask_vals):.3f}, len={len(mask_vals)}")
+            trace["DSP"] = {
+                "noise_mask_min": round(min(mask_vals), 4),
+                "noise_mask_max": round(max(mask_vals), 4),
+                "noise_mask_mean": round(sum(mask_vals) / len(mask_vals), 4),
+                "noise_mask_len": len(mask_vals),
+            }
 
-    # Execution depth
-    depth = getattr(pred, 'execution_depth', '?')
-    print(f"    │ L7 depth:  {depth}")
+    trace["L7"] = {
+        "execution_depth": str(getattr(pred, 'execution_depth', '?')),
+    }
+    prefs = getattr(pred, 'current_preferences', None)
+    if prefs:
+        trace["L7"]["preferences"] = prefs
 
-    # Failed checks summary
+    return trace
+
+
+def _serialize_checks(check_results):
+    return {
+        name: {"passed": passed, "detail": detail}
+        for name, (passed, detail) in check_results.items()
+    }
+
+
+def _print_trace(scenario, trace, failures_for_scenario):
+    """印出場景的推理 trace，每個場景都呼叫。"""
+    print(f"\n    ┌─ Trace: {scenario}")
+
+    l4 = trace.get("L4", {})
+    if l4:
+        print(f"    │ L4 noise:  {l4['noise_description'][:150]}")
+        print(f"    │ L4 speech: {l4['speech_description'][:100]}")
+        print(f"    │ L4 env:    {l4['environment_description'][:100]}")
+        print(f"    │ L4 conf:   {l4['confidence']}")
+
+    l5 = trace.get("L5", {})
+    if l5:
+        print(f"    │ L5 scene:  {l5['situation'][:200]}")
+        print(f"    │ L5 conf:   {l5['confidence']}")
+
+    l6 = trace.get("L6", {})
+    if l6:
+        print(f"    │ L6 beam:   azimuth={l6['beam_azimuth_deg']}°, width={l6['beam_width_deg']}°")
+        print(f"    │ L6 NR:     agg={l6['nr_aggressiveness']}")
+        print(f"    │ L6 comp:   ratio={l6['compression_ratio']}")
+        print(f"    │ L6 reason: {l6['reasoning'][:200]}")
+
+    dsp_t = trace.get("DSP", {})
+    if dsp_t:
+        print(f"    │ DSP mask:  min={dsp_t['noise_mask_min']:.3f}, "
+              f"max={dsp_t['noise_mask_max']:.3f}, len={dsp_t['noise_mask_len']}")
+
+    l7 = trace.get("L7", {})
+    if l7.get("preferences"):
+        print(f"    │ L7 prefs:  {l7['preferences']}")
+    print(f"    │ L7 depth:  {l7.get('execution_depth', '?')}")
+
     if failures_for_scenario:
         print(f"    │")
         print(f"    │ Failed checks ({len(failures_for_scenario)}):")
@@ -148,75 +178,8 @@ def _print_trace(scenario, pred, failures_for_scenario):
     print(f"    └─")
 
 
-def _auto_compare(prev_results_path, current_scores, current_scenarios):
-    """
-    ★ v0.9: 自動讀取上一次的 eval 結果，印出 delta 比較。
-
-    每次 eval 跑完都會呼叫。如果找到上一次結果，就印出逐 layer 的平均分數變化。
-    讓每次跑 eval 都能看到「跟上次比有沒有變好/變差」。
-    """
-    if not os.path.exists(prev_results_path):
-        return
-
-    try:
-        with open(prev_results_path, 'r', encoding='utf-8') as f:
-            prev = json.load(f)
-        prev_scores = prev.get("layer_scores", {})
-        prev_program = prev.get("program", "?")
-        prev_ts = prev.get("timestamp", "?")
-    except (json.JSONDecodeError, KeyError):
-        return
-
-    if not prev_scores:
-        return
-
-    layers = ["L4", "L5", "L6", "DSP", "L7"]
-    has_delta = False
-
-    print(f"\n  vs Previous Run ({prev_program}, {prev_ts}):")
-    for layer in layers:
-        prev_vals = prev_scores.get(layer, [])
-        curr_vals = current_scores.get(layer, [])
-        if not prev_vals or not curr_vals:
-            continue
-        prev_avg = sum(prev_vals) / len(prev_vals)
-        curr_avg = sum(curr_vals) / len(curr_vals)
-        delta = curr_avg - prev_avg
-
-        if abs(delta) > 0.005:
-            has_delta = True
-            marker = "+" if delta > 0 else ""
-            print(f"    {layer:>4}: {prev_avg:.1%} → {curr_avg:.1%}  ({marker}{delta:.1%})")
-        else:
-            print(f"    {layer:>4}: {curr_avg:.1%}  (unchanged)")
-
-    # 逐場景 delta（只印有變化的）
-    prev_scenario_list = prev.get("scenarios", [])
-    if prev_scenario_list == current_scenarios and has_delta:
-        print(f"\n  Per-scenario changes:")
-        for i, scenario in enumerate(current_scenarios):
-            changes = []
-            for layer in layers:
-                prev_vals = prev_scores.get(layer, [])
-                curr_vals = current_scores.get(layer, [])
-                if i < len(prev_vals) and i < len(curr_vals):
-                    d = curr_vals[i] - prev_vals[i]
-                    if abs(d) > 0.01:
-                        marker = "+" if d > 0 else ""
-                        changes.append(f"{layer}{marker}{d:.0%}")
-            if changes:
-                print(f"    {scenario}: {', '.join(changes)}")
-
-
-def run_eval(program=None, verbose=False):
-    """
-    L4-L7 semantic evaluation — 直接呼叫 composites，繞過 harness。
-
-    Args:
-        program: 可選的優化後 Module（GEPATrainableHarness 或 AcousticSemanticHarness）。
-                 若提供，用其中的 composites 取代預設實例。
-        verbose: 印出所有場景的完整 trace（不只是 fail 的場景）。
-    """
+def run_eval(program=None):
+    """L4-L7 semantic evaluation — 直接呼叫 composites，繞過 harness。"""
     _load_env()
 
     import dspy
@@ -234,26 +197,19 @@ def run_eval(program=None, verbose=False):
     print("=" * 60)
     print("  ASIR Evaluation — L4-L7 Semantic Layers")
     print("=" * 60)
-    print("  Design: AcousticFeatures injected directly → L4")
-    print("  L1-L3 tests: python -m pytest tests/ -v")
 
-    # Configure LMs
     fast_lm = dspy.LM("openai/gpt-4o-mini", api_key=api_key)
     strong_lm = dspy.LM("openai/gpt-4o-mini", api_key=api_key)
     dspy.configure(lm=fast_lm)
 
-    # ★ v0.9: 支援載入優化後的 composites
     if program is not None:
-        # 從 GEPATrainableHarness 或 AcousticSemanticHarness 取出 composites
         harness = getattr(program, 'harness', program)
         perceptual_desc = harness.perceptual_desc
         scene_understanding = harness.scene_understanding
         strategy_gen = harness.strategy_gen
         pipeline_router = harness.pipeline_router
         program_label = "optimized"
-        print(f"  Program: {program_label}")
     else:
-        # Instantiate composites directly (not through harness)
         perceptual_desc = FullPerceptualDescription()
         scene_understanding = SceneWithHistory()
         strategy_gen = GenerateFullStrategy()
@@ -261,31 +217,25 @@ def run_eval(program=None, verbose=False):
         program_label = "baseline"
 
     examples = create_eval_examples()
-    print(f"\n  {len(examples)} scenarios ({program_label})")
-    if verbose:
-        print("  Verbose mode: showing full trace for all scenarios\n")
-    else:
-        print()
+    print(f"\n  {len(examples)} scenarios ({program_label})\n")
 
     layer_scores = {"L4": [], "L5": [], "L6": [], "DSP": [], "L7": []}
     failures = []
+    scenario_details = {}
 
     for i, ex in enumerate(examples):
         scenario = ex.scenario
         print(f"  [{i+1}/{len(examples)}] {scenario}...", end=" ", flush=True)
 
         try:
-            # === Build AcousticFeatures from example params ===
             features = build_features(ex)
 
-            # === L4: Perceptual Description ===
             with dspy.context(lm=fast_lm):
                 percept = perceptual_desc(
                     acoustic_features=features,
                     user_context=str(ex.user_profile),
                 )
 
-            # === L5: Scene Understanding ===
             with dspy.context(lm=strong_lm):
                 scene = scene_understanding(
                     percept=percept,
@@ -293,7 +243,6 @@ def run_eval(program=None, verbose=False):
                     recent_scenes=[],
                 )
 
-            # === L6: Strategy Generation ===
             prefs = '{"noise_tolerance":"medium","processing_preference":"natural"}'
             with dspy.context(lm=strong_lm):
                 strategy = strategy_gen(
@@ -302,10 +251,8 @@ def run_eval(program=None, verbose=False):
                     audiogram_json=str(ex.audiogram_json),
                 )
 
-            # === L6→L2: Translation to DSP params ===
             dsp_params = comp_strategy_to_dsp_params(strategy)
 
-            # === L7: Pipeline Router ===
             user_action = str(getattr(ex, 'user_action', 'none'))
             with dspy.context(lm=fast_lm):
                 routing = pipeline_router(
@@ -316,7 +263,6 @@ def run_eval(program=None, verbose=False):
                     frames_since_full_update=10,
                 )
 
-            # === Build unified prediction for metrics ===
             pred = dspy.Prediction(
                 percept=percept,
                 scene=scene,
@@ -325,7 +271,6 @@ def run_eval(program=None, verbose=False):
                 execution_depth=str(routing.execution_depth).strip().lower(),
             )
 
-            # === Per-layer constraint checks ===
             l4 = check_l4_perceptual(ex, pred)
             l5 = check_l5_scene(ex, pred)
             l6 = check_l6_strategy(ex, pred)
@@ -346,7 +291,15 @@ def run_eval(program=None, verbose=False):
 
             print(f"L4={s4:.0%} L5={s5:.0%} L6={s6:.0%} DSP={sd:.0%} L7={s7:.0%}")
 
-            # Collect failures for this scenario
+            trace = _build_trace(pred)
+            all_checks = {
+                "L4": _serialize_checks(l4),
+                "L5": _serialize_checks(l5),
+                "L6": _serialize_checks(l6),
+                "DSP": _serialize_checks(dsp),
+                "L7": _serialize_checks(l7),
+            }
+
             scenario_failures = []
             for layer_name, checks in [
                 ("L4", l4), ("L5", l5), ("L6", l6), ("DSP", dsp), ("L7", l7),
@@ -362,8 +315,13 @@ def run_eval(program=None, verbose=False):
                         scenario_failures.append(entry)
                         failures.append(entry)
 
-            # ★ v0.9: Trace — 每個場景都印摘要（方便目視確認數值合理性）
-            _print_trace(scenario, pred, scenario_failures)
+            _print_trace(scenario, trace, scenario_failures)
+
+            scenario_details[scenario] = {
+                "scores": {"L4": s4, "L5": s5, "L6": s6, "DSP": sd, "L7": s7},
+                "trace": trace,
+                "checks": all_checks,
+            }
 
         except Exception as e:
             print(f"ERROR: {e}")
@@ -378,9 +336,11 @@ def run_eval(program=None, verbose=False):
     print("\n" + "=" * 60)
     print("  Evaluation Summary")
     print("=" * 60)
+    summary = {}
     for layer, scores in layer_scores.items():
         if scores:
             avg = sum(scores) / len(scores)
+            summary[layer] = round(avg, 3)
             above_half = sum(1 for s in scores if s >= 0.5)
             print(f"  {layer:>4}: {avg:.1%}  ({above_half}/{len(scores)} scenarios >= 50%)")
 
@@ -388,50 +348,28 @@ def run_eval(program=None, verbose=False):
         print(f"\n  {len(failures)} constraint violations:")
         for f in failures[:15]:
             print(f"    [{f['layer']}] {f['scenario']}.{f['check']}: {f['detail'][:80]}")
-        if len(failures) > 15:
-            print(f"    ... and {len(failures) - 15} more")
 
-    # ★ v0.9: 存檔 — 時間戳結果 + 覆蓋 latest
-    from datetime import datetime
-    base_dir = os.path.join(os.path.dirname(__file__), '..', '..')
-    scenarios = [ex.scenario for ex in examples]
-    result_data = {
-        "program": program_label if program is not None else "baseline",
-        "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-        "scenarios": scenarios,
-        "layer_scores": {k: [round(s, 3) for s in v] for k, v in layer_scores.items()},
-        "failures": failures,
-    }
+    # === MLflow logging ===
+    mlflow.set_experiment("asir-eval")
+    with mlflow.start_run(run_name=f"semantic_{program_label}"):
+        mlflow.set_tag("eval_type", "semantic")
+        mlflow.set_tag("program", program_label)
+        for layer, avg in summary.items():
+            mlflow.log_metric(f"{layer}_avg", avg)
+        mlflow.log_metric("num_failures", len(failures))
+        result_data = {
+            "program": program_label,
+            "summary": summary,
+            "scenarios": scenario_details,
+            "failures": failures,
+        }
+        mlflow.log_dict(result_data, "eval_results.json")
+    print(f"\n  Results logged to MLflow (experiment: asir-eval)")
 
-    # 存到 results/ 目錄（時間戳，累積歷史）
-    results_dir = os.path.join(base_dir, 'results')
-    os.makedirs(results_dir, exist_ok=True)
-    ts_path = os.path.join(results_dir, f"eval_{result_data['timestamp']}.json")
-    with open(ts_path, 'w', encoding='utf-8') as f:
-        json.dump(result_data, f, ensure_ascii=False, indent=2)
-
-    # 也存到 eval_results.json（覆蓋，方便快速查看最新）
-    latest_path = os.path.join(base_dir, 'eval_results.json')
-
-    # ★ v0.9: A/B 自動對比 — 讀取上一次結果，印 delta
-    _auto_compare(latest_path, layer_scores, scenarios)
-
-    with open(latest_path, 'w', encoding='utf-8') as f:
-        json.dump(result_data, f, ensure_ascii=False, indent=2)
-    print(f"\n  Results saved to: eval_results.json + {os.path.basename(ts_path)}")
-
-    # Exit code: fail if any layer avg < 40%
-    all_avg = {k: sum(v)/len(v) for k, v in layer_scores.items() if v}
-    if any(avg < 0.4 for avg in all_avg.values()):
-        print("\n  ⚠ Some layers below 40% — check failures above")
-        return layer_scores
     return layer_scores
 
 
 def main():
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
-
-    # ★ v0.9: 支援載入優化後的 program
     program = None
     for i, arg in enumerate(sys.argv):
         if arg == "--program" and i + 1 < len(sys.argv):
@@ -446,7 +384,7 @@ def main():
             program.load(program_path)
             break
 
-    run_eval(program=program, verbose=verbose)
+    run_eval(program=program)
 
 
 if __name__ == "__main__":

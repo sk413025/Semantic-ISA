@@ -87,14 +87,8 @@ def compile_with_gepa(save_program=True):
     except ImportError:
         print("  ★ Phase 4: MultiModalInstructionProposer 不可用，使用預設 proposer")
 
-    # ★ v0.9: 檢測 MLflow 可用性
-    use_mlflow = False
-    try:
-        import mlflow  # noqa: F401
-        use_mlflow = True
-        print(f"  ★ MLflow 已啟用 (version {mlflow.__version__})")
-    except ImportError:
-        print("  ★ MLflow 不可用，使用本地日誌 (pip install mlflow 可啟用)")
+    import mlflow
+    print(f"  ★ MLflow version {mlflow.__version__}")
 
     # ★ GEPA 編譯 — 限制預算在 ~5-10 分鐘
     gepa_kwargs = dict(
@@ -108,7 +102,7 @@ def compile_with_gepa(save_program=True):
         # ★ v0.9: 追蹤配置
         log_dir=log_dir,
         track_best_outputs=True,
-        use_mlflow=use_mlflow,
+        use_mlflow=True,
     )
     if instruction_proposer is not None:
         gepa_kwargs["instruction_proposer"] = instruction_proposer
@@ -125,10 +119,18 @@ def compile_with_gepa(save_program=True):
     print("★★★ GEPA 編譯完成 ★★★")
     print("=" * 70)
 
-    # ★ v0.9: 分析優化結果
-    from asir.gepa.analysis import print_gepa_summary, print_instruction_diffs
-    print_gepa_summary(optimized)
-    print_instruction_diffs(seed_instructions, optimized)
+    # 印出 instruction diffs（MLflow 也有記錄，這裡只做 console 摘要）
+    changed = 0
+    for name, pred in optimized.named_predictors():
+        sig = pred.signature
+        after = str(sig.instructions) if hasattr(sig, 'instructions') else str(sig)
+        before = seed_instructions.get(name, "")
+        if before.strip() != after.strip():
+            changed += 1
+            print(f"\n  ★ {name}")
+            print(f"    BEFORE: {before[:150]}{'...' if len(before) > 150 else ''}")
+            print(f"    AFTER:  {after[:150]}{'...' if len(after) > 150 else ''}")
+    print(f"\n  Instruction changes: {changed}/{len(seed_instructions)} predictors")
 
     # ★ v0.9: 存檔優化後的 program + metadata
     save_dir = None

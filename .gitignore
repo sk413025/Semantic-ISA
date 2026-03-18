@@ -25,12 +25,10 @@ Desktop.ini
 *.tmp
 /tmp/
 
-# Evaluation output
-eval_results.json
-integration_results.json
-compare_results.json
-
-# GEPA runs & optimized programs (large, per-run artifacts)
+# GEPA runs & optimized programs
 runs/
 programs/
-results/
+
+# MLflow (eval + GEPA 結果都在這裡，mlflow ui 查看)
+mlruns/
+mlartifacts/
