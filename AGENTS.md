@@ -35,8 +35,11 @@ audio into optimized DSP parameters through LLM-powered reasoning.
 ## Running the Project
 
 ```bash
-# Always use UTF-8 on Windows
+# 完整 demo（L1-L7 語意推理 + 使用者回饋，需要 OPENAI_API_KEY）
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
+
+# 只跑確定性層（不需要 API key）
+PYTHONUTF8=1 python -X utf8 -m examples.run_demo --l1-l3
 ```
 
 ## Testing & Evaluation
@@ -76,7 +79,7 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 | `test_deterministic.py` | 無（L1-L3 確定性，無 LLM） | 看 console output |
 | `test_semantic.py` | MLflow `asir-eval-pytest` → `pytest_eval_results.json` | `mlflow ui` |
 | `test_integration.py` | MLflow `asir-integration-pytest` → `pytest_integration_results.json` | `mlflow ui` |
-| `run_demo --full` | MLflow `asir-demo` → `demo_trace.json` | `mlflow ui` |
+| `run_demo` | MLflow `asir-demo` → `demo_trace.json` | `mlflow ui` |
 | `asir.eval` | MLflow `asir-eval` → `eval_results.json` | `mlflow ui` 或 `download_artifacts("eval_results.json")` |
 | `asir.eval --integration` | MLflow `asir-eval` → `integration_results.json` | `mlflow ui` |
 

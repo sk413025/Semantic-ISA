@@ -2,9 +2,9 @@
 ASIR Demo — Run the full 7-layer pipeline.
 
 Usage:
-    python -m examples.run_demo           # deterministic layers only
-    python -m examples.run_demo --full    # full pipeline (needs API key)
+    python -m examples.run_demo           # full L1-L7 pipeline (needs API key)
     python -m examples.run_demo --gepa    # full + GEPA optimization
+    python -m examples.run_demo --l1-l3   # deterministic layers only (no API key)
 """
 import os
 import sys
@@ -27,6 +27,20 @@ from asir.gepa.compiler import compile_with_gepa
 SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scenarios"
 USER_PROFILE = "72歲男性，雙耳中度感音神經性聽損，偏好自然聲"
 AUDIOGRAM = '{"250":30,"500":35,"1000":40,"2000":50,"4000":60}'
+
+
+def _load_env():
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_env()
 
 
 def demo_deterministic_layers():
@@ -244,7 +258,8 @@ if __name__ == "__main__":
     demo_deterministic_layers()
     print("\n" + ARCHITECTURE_MAP)
 
-    if "--full" in sys.argv or "--gepa" in sys.argv:
+    if "--l1-l3" not in sys.argv:
+        # 預設跑完整管線（含語意推理 + 使用者回饋）
         demo_full_pipeline()
 
     if "--gepa" in sys.argv:

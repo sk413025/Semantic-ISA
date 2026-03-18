@@ -25,11 +25,11 @@ via an LLM-powered pipeline with learnable routing decisions.
 ## Quick Start
 
 ```bash
-# Deterministic layers only (no API key)
-PYTHONUTF8=1 python -X utf8 -m examples.run_demo
+# Full L1-L7 demo — 菜市場 → 語意推理 → 「太悶了」回饋 → 偏好更新
+PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo
 
-# Full pipeline (needs OPENAI_API_KEY)
-PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --full
+# Deterministic only (no API key)
+PYTHONUTF8=1 python -X utf8 -m examples.run_demo --l1-l3
 
 # Full + GEPA optimization
 PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa

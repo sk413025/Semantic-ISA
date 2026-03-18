@@ -108,18 +108,18 @@ Method A       = 用 learnable predictor 做路由, GEPA 最佳化目標
 # Step 0: 合成 10 個場景測試音檔（菜市場、餐廳、教堂等，只需跑一次）
 PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
 
-# Step 1: L1-L3 確定性 demo — 用菜市場音檔跑訊號處理（不需要 API key）
+# Step 1: 完整 demo — 菜市場 → LLM 語意推理 → DSP → 「太悶了」回饋 → 偏好更新
+#   需要 OPENAI_API_KEY，推理 trace 記錄到 MLflow (mlflow ui 查看)
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
-# Step 2: Full L1-L7 pipeline — 菜市場 → LLM 推理 → DSP 參數（需要 API key）
-PYTHONUTF8=1 python -X utf8 -m examples.run_demo --full
-
-# Step 3: 跑測試（L1-L3 確定性 + 場景一致性驗證）
+# Step 2: 跑測試（L1-L3 確定性 + 場景一致性驗證）
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# Step 4: 語意測試（L4-L7 推理品質，需要 API key）
+# Step 3: 語意測試（L4-L7 推理品質，需要 API key）
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 ```
+
+> 沒有 API key？`python -m examples.run_demo --l1-l3` 只跑確定性層。
 
 > Windows 必須加 `PYTHONUTF8=1 python -X utf8`，否則會遇到 cp1252 encoding error。
 
