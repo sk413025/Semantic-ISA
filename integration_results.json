@@ -1,0 +1,142 @@
+{
+  "feature_extraction": [
+    {
+      "scenario": "restaurant_dinner",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 3.0,
+      "snr_actual": 4.8,
+      "energy_db": 76.8
+    },
+    {
+      "scenario": "church_ceremony",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 12.0,
+      "snr_actual": 8.2,
+      "energy_db": 75.9
+    },
+    {
+      "scenario": "quiet_library",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 30.0,
+      "snr_actual": 20.2,
+      "energy_db": 77.7
+    },
+    {
+      "scenario": "street_phone_call",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": -2.0,
+      "snr_actual": 7.2,
+      "energy_db": 69.6
+    },
+    {
+      "scenario": "supermarket_shopping",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 8.0,
+      "snr_actual": 6.0,
+      "energy_db": 75.6
+    },
+    {
+      "scenario": "car_conversation",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 6.0,
+      "snr_actual": 6.1,
+      "energy_db": 77.4
+    },
+    {
+      "scenario": "noisy_cafe_complaint",
+      "status": "PASS",
+      "score": 1.0,
+      "snr_target": 2.0,
+      "snr_actual": 4.7,
+      "energy_db": 77.3
+    },
+    {
+      "scenario": "severe_loss_quiet_home",
+      "status": "PASS",
+      "score": 0.8,
+      "snr_target": 25.0,
+      "snr_actual": 2.8,
+      "energy_db": 76.1
+    }
+  ],
+  "end_to_end_failures": [
+    {
+      "scenario": "restaurant_dinner",
+      "layer": "L6",
+      "check": "nr_matches_scene",
+      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
+    },
+    {
+      "scenario": "quiet_library",
+      "layer": "L4",
+      "check": "noise_consistent",
+      "detail": "SNR=30.0dB → noise should be mild. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"ambient\",\n      "
+    },
+    {
+      "scenario": "quiet_library",
+      "layer": "DSP",
+      "check": "beam_appropriate",
+      "detail": "Expected wide beam (>= 45°) but width=30°"
+    },
+    {
+      "scenario": "street_phone_call",
+      "layer": "L4",
+      "check": "noise_consistent",
+      "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: [{\"type\": \"conversation\", \"direction\": \"omni\","
+    },
+    {
+      "scenario": "street_phone_call",
+      "layer": "L6",
+      "check": "nr_matches_scene",
+      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
+    },
+    {
+      "scenario": "street_phone_call",
+      "layer": "L7",
+      "check": "action_triggers_full",
+      "detail": "User action='focus_front' but depth='medium', expected 'full'"
+    },
+    {
+      "scenario": "supermarket_shopping",
+      "layer": "DSP",
+      "check": "beam_appropriate",
+      "detail": "Expected wide beam (>= 45°) but width=30°"
+    },
+    {
+      "scenario": "noisy_cafe_complaint",
+      "layer": "L4",
+      "check": "noise_consistent",
+      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\"noise_sources\":[{\"type\":\"background_noise\",\"d"
+    },
+    {
+      "scenario": "noisy_cafe_complaint",
+      "layer": "L6",
+      "check": "nr_matches_scene",
+      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
+    },
+    {
+      "scenario": "noisy_cafe_complaint",
+      "layer": "L7",
+      "check": "action_triggers_full",
+      "detail": "User action='太吵了' but depth='fast', expected 'full'"
+    },
+    {
+      "scenario": "severe_loss_quiet_home",
+      "layer": "L4",
+      "check": "noise_consistent",
+      "detail": "SNR=25.0dB → noise should be mild. Got: {\n    \"noise_sources\": [\n        {\n            \"type\": \"envi"
+    },
+    {
+      "scenario": "severe_loss_quiet_home",
+      "layer": "DSP",
+      "check": "beam_appropriate",
+      "detail": "Expected wide beam (>= 45°) but width=30°"
+    }
+  ]
+}
