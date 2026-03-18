@@ -25,6 +25,10 @@ audiogram_json           → check_dsp_output         → gain_matches_loss: 高
 expect_high_gain         → check_dsp_output         → high_gain_for_severe_loss: 重度聽損→高增益
 snr_db                   → check_dsp_output         → nr_matches_noise: SNR 低→NR 強
 expect_beam_focus        → check_dsp_output         → beam_appropriate: 預期聚焦→窄波束
+expect_beam_width_range  → check_dsp_output         → beam_width_targeted: 波束寬度在目標範圍 (GEPA 目標)
+expect_beam_azimuth_front → check_dsp_output        → beam_direction_front: 波束方位≈0° (GEPA 目標)
+expect_nr_range          → check_dsp_output         → nr_in_target_range: NR 在目標範圍 (GEPA 目標)
+expect_noise_mask_active → check_dsp_output         → noise_mask_active: noise_mask 有衰減 (GEPA 目標)
 (always)                 → check_dsp_output         → compression_reasonable: [1.0, 4.0]
 (always)                 → check_dsp_output         → dsp_structure_complete: 三個欄位都有值
 
@@ -373,6 +377,66 @@ def check_dsp_output(example, pred):
                 )
         except (ValueError, TypeError):
             pass
+
+    # 4b. ★ v0.9 收緊約束：波束寬度目標範圍（README GEPA 目標）
+    beam_width = getattr(strategy, 'beam_width_deg', None)
+    expect_bw_range = getattr(example, 'expect_beam_width_range', None)
+    if beam_width is not None and expect_bw_range is not None:
+        try:
+            bw = float(beam_width)
+            bw_min, bw_max = float(expect_bw_range[0]), float(expect_bw_range[1])
+            results["beam_width_targeted"] = (
+                bw_min <= bw <= bw_max,
+                f"beam_width={bw:.0f}°, target range=[{bw_min:.0f}°, {bw_max:.0f}°]"
+            )
+        except (ValueError, TypeError, IndexError):
+            pass
+
+    # 4c. ★ v0.9 收緊約束：波束方位指向前方（README GEPA 目標）
+    azimuth = getattr(strategy, 'target_azimuth_deg', None)
+    expect_front = getattr(example, 'expect_beam_azimuth_front', None)
+    if azimuth is not None and expect_front:
+        try:
+            az = float(azimuth)
+            # 容忍 ±30° — 前方為 0°，左負右正
+            results["beam_direction_front"] = (
+                -30 <= az <= 30,
+                f"azimuth={az:.0f}°, expected ≈0° (front, tolerance ±30°)"
+            )
+        except (ValueError, TypeError):
+            pass
+
+    # 4d. ★ v0.9 收緊約束：NR 目標範圍（README GEPA 目標）
+    nr_agg_val = getattr(strategy, 'nr_aggressiveness', None)
+    if nr_agg_val is None:
+        nr_agg_val = getattr(strategy, 'adjusted_nr_aggressiveness', None)
+    expect_nr_range = getattr(example, 'expect_nr_range', None)
+    if nr_agg_val is not None and expect_nr_range is not None:
+        try:
+            agg = float(nr_agg_val)
+            nr_min, nr_max = float(expect_nr_range[0]), float(expect_nr_range[1])
+            results["nr_in_target_range"] = (
+                nr_min <= agg <= nr_max,
+                f"NR agg={agg:.2f}, target range=[{nr_min:.1f}, {nr_max:.1f}]"
+            )
+        except (ValueError, TypeError, IndexError):
+            pass
+
+    # 4e. ★ v0.9 收緊約束：noise_mask 有衰減（README GEPA 目標）
+    expect_mask_active = getattr(example, 'expect_noise_mask_active', None)
+    if dsp is not None and expect_mask_active:
+        mask = getattr(dsp, 'noise_mask', None)
+        if mask is not None and isinstance(mask, (list, tuple)) and len(mask) > 0:
+            try:
+                mask_vals = [float(v) for v in mask]
+                has_attenuation = any(v < 0.95 for v in mask_vals)
+                results["noise_mask_active"] = (
+                    has_attenuation,
+                    f"noise_mask: min={min(mask_vals):.3f}, max={max(mask_vals):.3f}, "
+                    f"expected some bins < 0.95"
+                )
+            except (ValueError, TypeError):
+                pass
 
     # 5. Compression ratio 在合理範圍
     cr = getattr(strategy, 'compression_ratio', None)

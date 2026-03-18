@@ -72,7 +72,10 @@ tests/
 examples/
 ├── run_demo.py     # Entry point: deterministic demo / full pipeline / GEPA
 └── audio/          # Test WAV files for agent testing (audio1.wav, audio2.wav)
+scripts/            # Utility scripts (dump_dsp_output.py)
 docs/               # Development documents (PDF) — design background
+programs/           # GEPA optimized program saves (gitignored)
+runs/               # GEPA optimization logs (gitignored)
 ```
 
 ## Key Concepts
@@ -92,15 +95,36 @@ Full glossary: see `README.md` § 領域術語 Glossary (collapsible section)
 
 ## Evaluation
 
-Two tools, each does one job:
+Three tools + debug/comparison flags.**執行順序見 AGENTS.md**，快速版：
 
 ```bash
-# L1-L3: pytest (deterministic, no API key)
+# Step 0: 生成場景音檔（只在缺音檔時需要）
+PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
+
+# Step 1: L1-L3 pytest (deterministic, no API key)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# L4-L7: semantic eval (needs OPENAI_API_KEY in .env)
+# Step 2: L4-L7 semantic eval (needs OPENAI_API_KEY in .env)
 PYTHONUTF8=1 python -X utf8 -m asir.eval
+
+# Step 3: Integration eval — 真實音檔 → 完整 pipeline
+PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 ```
+
+**Debug & 進階用法**（v0.9+）:
+```bash
+# Trace — 每個場景都會印 L4→L5→L6 推理鏈摘要（方便目視確認數值合理性）
+# 不需要額外 flag，跑 eval 就會看到
+
+# 載入 GEPA 優化後的 program 跑 eval
+PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
+
+# A/B 對比 — baseline vs 優化後，產出並排比較表
+PYTHONUTF8=1 python -X utf8 -m asir.eval --compare programs/gepa_xxx/program.json
+```
+
+**GEPA 優化完成後會自動**：存檔到 `programs/gepa_{timestamp}/`（program.json + metadata.json），
+印出 instruction diffs 和 Pareto front 摘要。詳見 AGENTS.md § "GEPA 優化 + Program 存檔"。
 
 L4-L7 eval 的資料流：
 - `examples.py` 定義場景的物理參數 (SNR, RT60, audiogram...)

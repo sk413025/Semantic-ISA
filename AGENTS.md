@@ -60,6 +60,69 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 - Constraint 欄位的對應見 `asir/eval/metrics.py` 頂部 mapping 表
 - 輸出: `eval_results.json` (semantic) / `integration_results.json` (integration)
 
+### Trace — 每場景推理鏈摘要 (v0.9+)
+
+每個場景跑完都會自動印出 L4→L5→L6→DSP→L7 的推理鏈摘要，**不需要額外 flag**：
+
+```bash
+# 跑 eval 就會看到每個場景的 trace
+PYTHONUTF8=1 python -X utf8 -m asir.eval
+PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
+```
+
+Trace 輸出包含：L4 noise/speech/env description、L5 situation、L6 beam/NR/reasoning、DSP mask stats、L7 depth + preferences。
+
+**為什麼每場景都印？** 即使所有 check pass，數值可能仍不合理（如安靜場景 NR=0.7）。
+Trace 讓人（或 agent）目視確認每一層的推理是否符合場景特性。
+
+如果有 check fail，trace 尾端會額外列出失敗的 check 清單。
+
+### GEPA 優化 + Program 存檔 (v0.9+)
+
+```bash
+# 跑 GEPA 優化（~5-10 分鐘）
+PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa
+```
+
+GEPA 完成後會自動：
+1. 印出 **優化摘要**（metric calls、candidates、Pareto front）
+2. 印出 **instruction diffs**（每個 predictor 優化前後的 prompt 變化）
+3. 存檔到 `programs/gepa_{timestamp}/program.json` + `metadata.json`
+4. 若安裝 MLflow (`pip install mlflow`)，自動記錄到 MLflow
+
+### A/B 對比 — baseline vs 優化後 (v0.9+)
+
+```bash
+# baseline vs 優化後的 program
+PYTHONUTF8=1 python -X utf8 -m asir.eval --compare programs/gepa_xxx/program.json
+
+# 兩個版本互相比較
+PYTHONUTF8=1 python -X utf8 -m asir.eval --compare programs/v1/program.json programs/v2/program.json
+```
+
+會跑同一組 eval examples 各一次，產出並排比較表（逐場景、逐 layer、標示 +/-）。
+
+### 自動 Delta 對比 (v0.9+)
+
+每次跑 `python -m asir.eval` 或 `--integration` 都會**自動比對上一次結果**，印出逐 layer delta：
+```
+  vs Previous Run (baseline, 20260317_120000):
+      L4: 75% → 80%  (+5%)
+      L6: 90% → 85%  (-5%)
+```
+
+結果同時存到 `results/` 目錄（時間戳檔名，累積歷史）+ `eval_results.json`（覆蓋，最新一筆）。
+
+### 載入優化後的 Program 跑 eval
+
+```bash
+# Semantic eval 用優化後的 program
+PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
+
+# Integration eval 用優化後的 program
+PYTHONUTF8=1 python -X utf8 -m asir.eval --integration --program programs/gepa_xxx/program.json
+```
+
 ### Eval Scenarios and README Alignment
 
 10 個 eval 場景定義在 `asir/eval/examples.py`，其中兩個直接對應 README 的旗艦展示：
@@ -182,3 +245,23 @@ print(f'Loaded: {sig.n_channels}ch, {sig.sample_rate}Hz, {sig.duration_ms:.0f}ms
   2. `asir/eval/generate_audio.py` — 在 `SCENARIOS`, `NOISE_TYPE_MAP`, `DEMAND_MAP` 三個 dict 加對應項
   3. 跑 `python -m asir.eval.generate_audio` 生成新 WAV
   4. 跑 `python -m asir.eval --integration` 驗證
+- **跑 GEPA 優化並比較**:
+  1. `python -m examples.run_demo --gepa` → 自動存檔到 `programs/`
+  2. `python -m asir.eval --compare programs/gepa_xxx/program.json` → A/B 對比
+- **Debug eval failure**: `python -m asir.eval --verbose` → 看完整 L4→L6 推理鏈
+
+## Artifact Directories
+
+```
+results/                 # eval 歷史結果（gitignored，每次 eval 自動累積）
+├── eval_{timestamp}.json           # semantic eval 結果
+└── integration_{timestamp}.json    # integration eval 結果
+
+runs/                    # GEPA 優化過程日誌（gitignored）
+└── gepa/{timestamp}/    # GEPA log_dir 輸出
+
+programs/                # 優化後的 program 存檔（gitignored）
+└── gepa_{timestamp}/
+    ├── program.json     # dspy.Module state (可用 Module.load 載入)
+    └── metadata.json    # 優化配置 + 統計（metric calls, candidates 等）
+```

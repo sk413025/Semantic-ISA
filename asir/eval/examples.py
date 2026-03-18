@@ -27,6 +27,12 @@ Evaluation Examples — 跟 gepa/training.py 的 5 個場景完全分離
   expect_beam_focus      bool       → check_dsp: beam_width 應 < 90°
   expect_high_gain       bool       → check_dsp: high_gain_for_severe_loss（重度聽損→高增益）
   expect_full_depth      bool       → check_l7: execution_depth 應為 "full"
+
+收緊約束（README 目標值，GEPA 優化目標）:
+  expect_beam_width_range  (min,max)  → check_dsp: 波束寬度在目標範圍內（如 README 45°）
+  expect_beam_azimuth_front  bool     → check_dsp: 波束方位指向前方 (azimuth ≈ 0°)
+  expect_nr_range          (min,max)  → check_dsp: NR aggressiveness 在目標範圍
+  expect_noise_mask_active   bool     → check_dsp: noise_mask 有衰減（非全 1.0）
 """
 import dspy
 
@@ -224,6 +230,11 @@ def create_eval_examples():
         expect_reverberant=False,    # 半開放空間，RT60=0.6 中等
         expect_strong_nr=True,       # 嘈雜菜市場 → 強降噪
         expect_beam_focus=True,      # 跟攤販對話 → 集中波束
+        # ★ v0.9: 收緊約束 — README 目標值（GEPA 優化目標）
+        expect_beam_width_range=(20, 60),    # README: "波束集中正前方 45°"
+        expect_beam_azimuth_front=True,      # README: "正前方"
+        expect_nr_range=(0.5, 0.9),          # README: "啟用強降噪"
+        expect_noise_mask_active=True,       # 噪音遮罩應有衰減
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",
@@ -248,6 +259,11 @@ def create_eval_examples():
         expect_beam_focus=True,      # 仍在對話
         expect_full_depth=True,      # 有 user_action → full pipeline
         expect_preference_updated=True,  # 抱怨太悶 → 更新偏好
+        # ★ v0.9: 收緊約束 — 太悶了 → NR 降低但波束仍集中
+        expect_beam_width_range=(20, 60),    # 仍在對話，波束應集中
+        expect_beam_azimuth_front=True,      # 仍面對攤販
+        expect_nr_range=(0.1, 0.5),          # 太悶了 → NR 應降低
+        expect_noise_mask_active=True,       # 遮罩仍啟用但衰減較少
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",

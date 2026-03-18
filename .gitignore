@@ -27,3 +27,10 @@ Desktop.ini
 
 # Evaluation output
 eval_results.json
+integration_results.json
+compare_results.json
+
+# GEPA runs & optimized programs (large, per-run artifacts)
+runs/
+programs/
+results/
