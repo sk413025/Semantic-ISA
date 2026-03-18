@@ -39,22 +39,61 @@ PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
 ## Testing & Evaluation
 
-Three tools, each does one job:
+Three tools, each does one job. **Run in this order:**
 ```bash
-# L1-L3: pytest (deterministic, no API key)
+# Step 0: Generate scenario WAVs (only if missing or after adding new scenarios)
+PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
+
+# Step 1: L1-L3 pytest (deterministic, no API key, ~7s)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# L4-L7: semantic eval — inject features directly (needs OPENAI_API_KEY)
+# Step 2: L4-L7 semantic eval (needs OPENAI_API_KEY, ~2min)
 PYTHONUTF8=1 python -X utf8 -m asir.eval
 
-# Integration: real audio → full pipeline (needs OPENAI_API_KEY)
+# Step 3: Integration eval — real audio → full pipeline (needs OPENAI_API_KEY, ~10min)
 PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 ```
 
+- Integration eval **需要 scenario WAVs 存在**。如果 `examples/audio/scenarios/` 裡缺音檔，先跑 Step 0
 - L4-L7 eval 直接注入 AcousticFeatures 到 L4，繞過 L1-L3 隨機訊號
 - Integration eval 用真實音檔走完整 harness pipeline (L1→L7)
 - Constraint 欄位的對應見 `asir/eval/metrics.py` 頂部 mapping 表
 - 輸出: `eval_results.json` (semantic) / `integration_results.json` (integration)
+
+### Eval Scenarios and README Alignment
+
+10 個 eval 場景定義在 `asir/eval/examples.py`，其中兩個直接對應 README 的旗艦展示：
+
+| Scenario | 對應 README | 驗證重點 |
+|----------|-----------|---------|
+| `wet_market_vendor` | "場景範例：菜市場" | SNR=0dB 極吵 → 強降噪 + 波束聚焦 |
+| `market_too_muffled` | "使用者回饋：太悶了" | user_action="太悶了" → 降低降噪 + 偏好持久化 |
+
+**如果你改了 README 的場景描述，eval 也要對應更新（反之亦然）。**
+
+### Interpreting Eval Results
+
+eval 分數受 LLM 非確定性影響，每次跑會有 ±5% 波動。以下是已知的狀態：
+
+**已知的 GEPA 優化目標（不是 bug，是 LLM 需要學習的）：**
+- L4 `noise_consistent` — LLM 有時不在 JSON severity 欄位寫 "high"，即使 SNR<5dB
+- L6 `nr_matches_scene` — NR aggressiveness 有時低於 0.4 threshold
+- DSP `beam_appropriate` — 安靜場景 LLM 有時給窄波束（應該給寬波束）
+- L7 `preference_stable` — "focus_front" 等指令型 user_action，LLM 有時會多更新偏好
+
+**真正需要修的 bug 特徵：**
+- 同一個 check 在**每次跑都失敗**（不是偶爾）
+- 失敗原因是**程式邏輯錯誤**而不是 LLM 輸出品質
+
+### Key Behavior: user_action and Preferences (v0.8+)
+
+`harness.py` 對 **任何 `user_action != "none"`** 都會呼叫 `UpdatePreferencesSig`。
+LLM 語意決定偏好要不要改，沒有硬編碼 keyword 判斷。
+
+這表示：
+- 中文回饋（"太悶了"、"太吵了"）會正確觸發偏好更新
+- 指令型動作（"focus_front"）也會經過 LLM 判斷，但理想上不該改偏好
+- 偏好更新後會持久化到 `self.current_preferences`，影響後續每一幀的策略生成
 
 ## Test Audio Files
 
@@ -138,3 +177,8 @@ print(f'Loaded: {sig.n_channels}ch, {sig.sample_rate}Hz, {sig.duration_ms:.0f}ms
 - **Add routing logic**: Create in `asir/routing/`, wire in composite
 - **Modify GEPA feedback**: Edit `asir/gepa/metric.py`
 - **Change pipeline flow**: Edit `asir/harness.py`
+- **Add new eval scenario**: 三個地方都要改，然後重新生成音檔：
+  1. `asir/eval/examples.py` — 加 `dspy.Example` 含 scenario name + 聲學參數 + 約束
+  2. `asir/eval/generate_audio.py` — 在 `SCENARIOS`, `NOISE_TYPE_MAP`, `DEMAND_MAP` 三個 dict 加對應項
+  3. 跑 `python -m asir.eval.generate_audio` 生成新 WAV
+  4. 跑 `python -m asir.eval --integration` 驗證
