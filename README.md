@@ -110,16 +110,16 @@ PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa
 | **Python** ≥ 3.10 | |
 | Recommended LM | `gpt-4o-mini`（fast_lm）+ `gpt-4o`（strong_lm） |
 
-## 研究論文
+## 開發文件
 
-`docs/` 目錄下的理論背景：
+`docs/` 目錄下的開發背景與設計文件：
 
-1. `01-LLM聲學研究意義` — Why LLMs matter for acoustic research
-2. `02-語意ISA` — Semantic ISA 概念
+1. `01-LLM聲學研究意義` — 為什麼用 LLM 做聲學處理
+2. `02-語意ISA` — Semantic ISA 概念設計
 3. `03-語意ISA-HarnessEngineering` — Harness engineering 設計
-4. `04-語音評估的語意ISA相關研究` — Speech assessment 相關研究
-5. `05-Semantic IR——從物理層到意圖層` — Physical layer to intent layer
-6. `06-Acoustic Semantic IR (ASIR)` — Complete 7-layer specification
+4. `04-語音評估的語意ISA相關研究` — 語音評估相關背景
+5. `05-Semantic IR——從物理層到意圖層` — 從物理層到意圖層的架構演進
+6. `06-Acoustic Semantic IR (ASIR)` — 完整七層規格書
 
 ---
 

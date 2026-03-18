@@ -69,7 +69,7 @@ asir/
 examples/
 ├── run_demo.py     # Entry point: deterministic demo / full pipeline / GEPA
 └── audio/          # Test WAV files for agent testing (audio1.wav, audio2.wav)
-docs/               # Research papers (PDF) — theoretical background
+docs/               # Development documents (PDF) — design background
 ```
 
 ## Key Concepts

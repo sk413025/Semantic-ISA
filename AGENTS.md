@@ -58,15 +58,15 @@ print(f'Loaded: {sig.n_channels}ch, {sig.sample_rate}Hz, {sig.duration_ms}ms')
 "
 ```
 
-## Research Documents
+## Development Documents
 
-`docs/` contains the theoretical background papers (PDF):
-- `01-LLM聲學研究意義` — Why LLMs matter for acoustic research
-- `02-語意ISA` — Semantic ISA concept
+`docs/` contains design documents and development background (PDF):
+- `01-LLM聲學研究意義` — Why use LLMs for acoustic processing
+- `02-語意ISA` — Semantic ISA concept design
 - `03-語意ISA-HarnessEngineering` — Harness engineering design
-- `04-語音評估的語意ISA相關研究` — Speech assessment related research
-- `05-Semantic IR——從物理層到意圖層` — From physical layer to intent layer
-- `06-Acoustic Semantic IR (ASIR) — Full 7-Layer Implementation` — Complete ASIR specification
+- `04-語音評估的語意ISA相關研究` — Speech assessment background
+- `05-Semantic IR——從物理層到意圖層` — Architecture evolution from physical to intent layer
+- `06-Acoustic Semantic IR (ASIR)` — Full 7-layer specification
 
 ## Common Tasks
 
