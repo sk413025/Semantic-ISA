@@ -67,13 +67,17 @@ asir/
 ├── multimodal/     # dspy.Audio / dspy.Image generation (Phase 1-2)
 ├── gepa/           # GEPA metric, training examples, compiler
 ├── eval/           # Evaluation framework: examples, metrics, runner
+│   ├── audio/      # Test WAV files (Git LFS), scenarios/ + speech/
+│   ├── examples.py # 10 eval scenarios (物理參數 + 約束)
+│   ├── run.py      # Semantic eval runner (L4-L7)
+│   ├── integration.py  # Integration eval (real audio → full pipeline)
+│   └── generate_audio.py  # Scenario WAV generator
 ├── harness.py      # Top-level AcousticSemanticHarness (the "OS")
 └── architecture.py # ASCII architecture diagram
 tests/
-└── test_deterministic.py  # L1-L3 pytest (17 tests, no API key)
+└── test_deterministic.py  # L1-L3 pytest + eval scenario tests (60 tests, no API key)
 examples/
-├── run_demo.py     # Entry point: deterministic demo / full pipeline / GEPA
-└── audio/          # Test WAV files
+└── run_demo.py     # Entry point: uses asir/eval/audio/ scenario WAVs
 docs/               # Development documents (PDF)
 ```
 

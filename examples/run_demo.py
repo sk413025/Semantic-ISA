@@ -8,6 +8,8 @@ Usage:
 """
 import os
 import sys
+import json
+from pathlib import Path
 
 # Add project root to path for direct execution
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,9 +19,14 @@ from asir.primitives import (
     prim_beamform, comp_spectral_subtract, comp_extract_full_features,
     prim_generate_gain_params,
 )
+from asir.primitives.signal import prim_load_audio
 from asir.harness import AcousticSemanticHarness
 from asir.architecture import ARCHITECTURE_MAP
 from asir.gepa.compiler import compile_with_gepa
+
+SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scenarios"
+USER_PROFILE = "72歲男性，雙耳中度感音神經性聽損，偏好自然聲"
+AUDIOGRAM = '{"250":30,"500":35,"1000":40,"2000":50,"4000":60}'
 
 
 def demo_deterministic_layers():
@@ -32,9 +39,17 @@ def demo_deterministic_layers():
     print("場景：李伯伯，12:15，菜市場魚攤")
     print("=" * 70)
 
-    # 第一層
-    print("\n[Layer 1] Physical Sensing — prim_sample_audio()")
-    signal = prim_sample_audio(duration_ms=32.0, n_channels=2)
+    # 用真實音檔（如果有），否則用合成
+    wav_path = SCENARIO_DIR / "wet_market_vendor.wav"
+    if wav_path.exists():
+        print(f"\n[Layer 1] Physical Sensing — prim_load_audio({wav_path.name})")
+        signal = prim_load_audio(str(wav_path))
+        if isinstance(signal, tuple):
+            signal = signal[0]
+    else:
+        print("\n[Layer 1] Physical Sensing — prim_sample_audio() (synthetic)")
+        signal = prim_sample_audio(duration_ms=32.0, n_channels=2)
+
     print(f"  Channels: {signal.n_channels}")
     print(f"  Sample rate: {signal.sample_rate} Hz")
     print(f"  Duration: {signal.duration_ms} ms")
@@ -68,8 +83,7 @@ def demo_deterministic_layers():
 
     # 第六層確定性 Primitive
     print("\n[Layer 6] Deterministic Primitive — prim_generate_gain_params()")
-    audiogram = '{"250":30,"500":35,"1000":40,"2000":50,"4000":60}'
-    gain = prim_generate_gain_params(audiogram, "market scene")
+    gain = prim_generate_gain_params(AUDIOGRAM, "market scene")
     print(f"  Gain per frequency: {gain['gain_per_frequency']}")
     print(f"  Compression ratio: {gain['compression_ratio']}")
     print(f"  Deterministic: {gain['deterministic']}")
@@ -83,40 +97,8 @@ def demo_deterministic_layers():
     return features
 
 
-def demo_full_pipeline():
-    """
-    展示完整七層管線（需要 OpenAI API key）
-    """
-    import json
-
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        print("ERROR: OPENAI_API_KEY not found in environment. Skipping full pipeline.")
-        return
-
-    print("\n" + "=" * 70)
-    print("DEMO: 完整七層管線（含 LLM 層）")
-    print("場景：李伯伯，12:15，菜市場魚攤")
-    print("=" * 70)
-
-    # 配置 LLM
-    task_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7)
-    strong_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7)  # 用同一個模型降低成本
-    dspy.configure(lm=task_lm)
-
-    # 創建 Harness
-    harness = AcousticSemanticHarness(
-        fast_lm=task_lm,
-        strong_lm=strong_lm
-    )
-
-    # 執行完整管線
-    print("\n>>> 執行第一次：無使用者動作（自動處理）")
-    result = harness(
-        user_action="none",
-        user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲"
-    )
-
+def _print_result(result):
+    """印出完整 L3→L7 推理鏈。"""
     print(f"\n[Layer 3] Features:")
     print(f"  SNR: {result.features.snr_db} dB")
     print(f"  Energy: {result.features.energy_db} dB SPL")
@@ -132,30 +114,75 @@ def demo_full_pipeline():
     print(f"  Challenges: {result.scene.challenges_json[:300]}")
 
     print(f"\n[Layer 6] Strategy:")
-    print(f"  Beam: azimuth={result.strategy.target_azimuth_deg}°, width={result.strategy.beam_width_deg}°")
+    print(f"  Beam: azimuth={result.strategy.target_azimuth_deg}, width={result.strategy.beam_width_deg}")
     print(f"  NR: method={result.strategy.nr_method}, aggressiveness={result.strategy.nr_aggressiveness}")
     print(f"  Gain: {result.strategy.gain_per_frequency}")
     print(f"  Compression: {result.strategy.compression_ratio}")
 
-    print(f"\n[Layer 2] DSP Params (translated from strategy):")
+    print(f"\n[DSP Params]:")
     print(f"  Beam weights: {result.dsp_params.beam_weights}")
     print(f"  Compression: {result.dsp_params.compression_ratio}")
     print(f"  Filter coeffs (first 5): {result.dsp_params.filter_coeffs[:5]}")
 
-    # 第二次：使用者按「不滿意」
-    print("\n" + "-" * 70)
-    print(">>> 執行第二次：使用者按了「不滿意」按鈕")
-    result2 = harness(
-        user_action="button_press:dissatisfied",
-        user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲"
+
+def demo_full_pipeline():
+    """
+    展示完整七層管線（需要 OpenAI API key）
+    場景：菜市場跟攤販對話 → 使用者抱怨「太悶了」→ 偏好更新 → 策略調整
+    """
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        print("ERROR: OPENAI_API_KEY not found in environment. Skipping full pipeline.")
+        return
+
+    import dspy
+
+    print("\n" + "=" * 70)
+    print("DEMO: 完整七層管線（含 LLM 層）")
+    print("場景：李伯伯，12:15，菜市場魚攤")
+    print("=" * 70)
+
+    # 配置 LLM
+    task_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7)
+    strong_lm = dspy.LM("openai/gpt-4o-mini", temperature=0.7)
+    dspy.configure(lm=task_lm)
+
+    # 載入真實音檔（如果有）
+    wav_path = SCENARIO_DIR / "wet_market_vendor.wav"
+    signal = None
+    if wav_path.exists():
+        signal = prim_load_audio(str(wav_path))
+        if isinstance(signal, tuple):
+            signal = signal[0]
+        print(f"  Audio: {wav_path.name} ({signal.duration_ms:.0f}ms, {signal.n_channels}ch)")
+
+    harness = AcousticSemanticHarness(
+        fast_lm=task_lm, strong_lm=strong_lm, enable_multimodal=True,
     )
 
-    print(f"\n[Layer 7] Intent parsed from button press:")
-    print(f"  Updated preferences: {json.dumps(result2.current_preferences, ensure_ascii=False, indent=2)}")
+    # --- 第一次：菜市場，無使用者動作 ---
+    print("\n>>> 場景 1: 菜市場跟攤販對話（自動處理）")
+    result = harness(
+        raw_signal=signal,
+        user_action="none",
+        user_profile=USER_PROFILE,
+        audiogram_json=AUDIOGRAM,
+    )
+    _print_result(result)
 
-    print(f"\n[Layer 6] Updated Strategy:")
-    print(f"  Beam: azimuth={result2.strategy.target_azimuth_deg}°, width={result2.strategy.beam_width_deg}°")
-    print(f"  NR: method={result2.strategy.nr_method}, aggressiveness={result2.strategy.nr_aggressiveness}")
+    # --- 第二次：使用者抱怨「太悶了」→ L7 偏好更新 ---
+    print("\n" + "-" * 70)
+    print(">>> 場景 2: 同場景，使用者抱怨「太悶了」→ 更新偏好")
+    result2 = harness(
+        raw_signal=signal,
+        user_action="太悶了",
+        user_profile=USER_PROFILE,
+        audiogram_json=AUDIOGRAM,
+    )
+    _print_result(result2)
+
+    print(f"\n[Layer 7] Preferences after feedback:")
+    print(f"  {json.dumps(result2.current_preferences, ensure_ascii=False, indent=2)}")
 
     print(f"\n[Scene History]:")
     for i, s in enumerate(result2.scene_history):

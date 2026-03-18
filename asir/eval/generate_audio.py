@@ -13,11 +13,11 @@ Usage:
   PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
 
 Output:
-  examples/audio/speech/*.wav   (3 TTS speech clips, 16kHz mono)
-  examples/audio/scenarios/*.wav (10 stereo 16kHz WAV, one per eval scenario)
+  asir/eval/audio/speech/*.wav     (3 TTS speech clips, 16kHz mono)
+  asir/eval/audio/scenarios/*.wav  (10 stereo 16kHz WAV, one per eval scenario)
 
 DEMAND dataset (optional, CC-BY 4.0):
-  Place 16kHz channel-01 WAV files in examples/audio/noise/:
+  Place 16kHz channel-01 WAV files in asir/eval/audio/noise/:
     PRESTO_ch01.wav, TCAR_ch01.wav, STRAFFIC_ch01.wav, etc.
   Download from: https://zenodo.org/records/1227121
 """
@@ -31,8 +31,7 @@ from pathlib import Path
 SR = 16000
 DURATION_S = 5.0
 
-BASE_DIR = Path(__file__).parent.parent.parent
-AUDIO_DIR = BASE_DIR / "examples" / "audio"
+AUDIO_DIR = Path(__file__).parent / "audio"
 SPEECH_DIR = AUDIO_DIR / "speech"
 SCENARIO_DIR = AUDIO_DIR / "scenarios"
 NOISE_DIR = AUDIO_DIR / "noise"

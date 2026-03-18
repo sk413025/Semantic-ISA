@@ -26,7 +26,7 @@ from asir.eval.metrics import (
 )
 
 BASE_DIR = Path(__file__).parent.parent.parent
-SCENARIO_DIR = BASE_DIR / "examples" / "audio" / "scenarios"
+SCENARIO_DIR = Path(__file__).parent / "audio" / "scenarios"
 
 
 def _load_env():

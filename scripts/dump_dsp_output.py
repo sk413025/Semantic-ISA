@@ -23,7 +23,7 @@ import numpy as np
 from asir.harness import AcousticSemanticHarness
 from asir.primitives.signal import prim_load_audio
 
-SCENARIO_DIR = Path(__file__).parent.parent / "examples" / "audio" / "scenarios"
+SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scenarios"
 
 # Setup LMs
 api_key = os.environ.get("OPENAI_API_KEY")

@@ -117,9 +117,9 @@ LLM 語意決定偏好要不要改，沒有硬編碼 keyword 判斷。
 
 ## Test Audio Files
 
-`examples/audio/` structure:
+`asir/eval/audio/` — eval 的 code 和資料在同一個目錄下：
 ```
-examples/audio/
+asir/eval/audio/
 ├── audio1.wav, audio2.wav     # Gemini TTS samples (24kHz mono)
 ├── speech/                    # Clean speech clips (16kHz mono)
 ├── noise/                     # (Optional) DEMAND dataset noise clips
@@ -127,6 +127,7 @@ examples/audio/
 ```
 
 Generator: `asir/eval/generate_audio.py`
+WAV 檔案使用 Git LFS 追蹤。
 
 ## Common Tasks
 

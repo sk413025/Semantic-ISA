@@ -3,9 +3,11 @@ L1-L3 Deterministic Layer Tests
 
 這些測試不需要 API key，純 numpy 驗證。
 用合成訊號測試每個 PRIM 的物理正確性。
+也用 asir/eval/ 的場景定義和音檔做整合驗證。
 """
 import numpy as np
 import pytest
+from pathlib import Path
 from asir.types import RawSignal
 from asir.primitives import (
     prim_sample_audio, prim_fft, prim_estimate_noise_psd,
@@ -13,6 +15,8 @@ from asir.primitives import (
     prim_extract_mfcc, prim_estimate_snr, prim_estimate_rt60,
     comp_extract_full_features, prim_generate_gain_params,
 )
+from asir.primitives.signal import prim_load_audio
+from asir.eval.examples import create_eval_examples
 
 
 # ===== Helpers: 合成已知特性的訊號 =====
@@ -207,3 +211,98 @@ class TestL6DeterministicGain:
         gain = prim_generate_gain_params(audiogram, "market")
         cr = gain["compression_ratio"]
         assert 1.0 <= cr <= 4.0, f"compression_ratio={cr}, expected 1.0-4.0"
+
+
+# ===== Eval Scenarios: 連結 asir/eval/ 場景定義和音檔 =====
+
+SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scenarios"
+EVAL_EXAMPLES = create_eval_examples()
+
+
+class TestEvalScenarioConsistency:
+    """驗證 eval 場景定義和音檔的一致性。"""
+
+    def test_every_scenario_has_wav(self):
+        """每個 eval scenario 都應有對應的 WAV 檔。"""
+        for ex in EVAL_EXAMPLES:
+            wav = SCENARIO_DIR / f"{ex.scenario}.wav"
+            assert wav.exists(), f"Missing WAV for scenario '{ex.scenario}': {wav}"
+
+    def test_no_orphan_wavs(self):
+        """不該有沒對應 scenario 的 WAV 檔。"""
+        scenario_names = {ex.scenario for ex in EVAL_EXAMPLES}
+        for wav in SCENARIO_DIR.glob("*.wav"):
+            assert wav.stem in scenario_names, \
+                f"Orphan WAV '{wav.name}' has no matching eval scenario"
+
+    def test_eval_examples_count(self):
+        """應有 10 個 eval 場景。"""
+        assert len(EVAL_EXAMPLES) == 10
+
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
+                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    def test_eval_example_fields(self, ex):
+        """每個 eval example 都有必要的物理參數欄位。"""
+        assert hasattr(ex, "snr_db")
+        assert hasattr(ex, "rt60_s")
+        assert hasattr(ex, "n_active_sources")
+        assert hasattr(ex, "energy_db")
+        assert hasattr(ex, "temporal_pattern")
+        assert hasattr(ex, "audiogram_json")
+
+
+class TestEvalAudioL1L3:
+    """用 eval 場景的真實音檔跑 L1-L3，驗證管線不會崩潰且特徵合理。"""
+
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
+                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    def test_load_and_extract_features(self, ex):
+        """載入場景 WAV → L1-L3 特徵提取，驗證結構和值域。"""
+        wav = SCENARIO_DIR / f"{ex.scenario}.wav"
+        if not wav.exists():
+            pytest.skip(f"WAV not found: {wav}")
+
+        signal = prim_load_audio(str(wav))
+        if isinstance(signal, tuple):
+            signal = signal[0]
+
+        assert signal.n_channels >= 1
+        assert signal.sample_rate == 16000
+        assert len(signal.samples[0]) > 0
+
+        features = comp_extract_full_features(signal)
+        assert np.isfinite(features.snr_db)
+        assert np.isfinite(features.rt60_s)
+        assert np.isfinite(features.energy_db)
+        assert features.n_active_sources >= 1
+        assert features.temporal_pattern in ("stationary", "modulated", "impulsive")
+        assert len(features.mfcc_summary) > 10
+
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
+                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    def test_fft_and_beamform(self, ex):
+        """載入場景 WAV → FFT + beamform 不會崩潰。"""
+        wav = SCENARIO_DIR / f"{ex.scenario}.wav"
+        if not wav.exists():
+            pytest.skip(f"WAV not found: {wav}")
+
+        signal = prim_load_audio(str(wav))
+        if isinstance(signal, tuple):
+            signal = signal[0]
+
+        spectrum = prim_fft(signal)
+        assert spectrum["freq_bins"] > 0
+        assert len(spectrum["magnitude"]) == spectrum["freq_bins"]
+
+        bf = prim_beamform(signal, target_azimuth_deg=0.0)
+        assert len(bf) > 0
+        assert np.all(np.isfinite(bf))
+
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
+                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    def test_gain_params_for_scenario(self, ex):
+        """每個場景的 audiogram 都能算出合理增益。"""
+        gain = prim_generate_gain_params(ex.audiogram_json, ex.scenario)
+        assert gain["deterministic"] is True
+        cr = gain["compression_ratio"]
+        assert 1.0 <= cr <= 4.0, f"{ex.scenario}: compression_ratio={cr}"
