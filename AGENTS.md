@@ -37,6 +37,30 @@ After modifying any file, verify the deterministic layers still work:
 PYTHONUTF8=1 python -X utf8 -c "from asir.primitives import comp_extract_full_features, prim_sample_audio; f = comp_extract_full_features(prim_sample_audio()); print(f'SNR={f.snr_db}, RT60={f.rt60_s}')"
 ```
 
+## Test Audio Files
+
+`examples/audio/` contains WAV files for testing the full pipeline:
+- `audio1.wav`, `audio2.wav` — sample recordings for `prim_load_audio()`
+- Use these to test multimodal features (dspy.Audio, spectrogram generation)
+
+```bash
+PYTHONUTF8=1 python -X utf8 -c "
+from asir.primitives.signal import prim_load_audio
+sig = prim_load_audio('examples/audio/audio1.wav')
+print(f'Loaded: {sig.n_channels}ch, {sig.sample_rate}Hz, {sig.duration_ms}ms')
+"
+```
+
+## Research Documents
+
+`docs/` contains the theoretical background papers (PDF):
+- `01-LLM聲學研究意義` — Why LLMs matter for acoustic research
+- `02-語意ISA` — Semantic ISA concept
+- `03-語意ISA-HarnessEngineering` — Harness engineering design
+- `04-語音評估的語意ISA相關研究` — Speech assessment related research
+- `05-Semantic IR——從物理層到意圖層` — From physical layer to intent layer
+- `06-Acoustic Semantic IR (ASIR) — Full 7-Layer Implementation` — Complete ASIR specification
+
 ## Common Tasks
 
 - **Add new Signature**: Create in `asir/primitives/`, export in `__init__.py`

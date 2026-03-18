@@ -50,6 +50,10 @@ asir/
 ├── gepa/           # GEPA metric, training examples, compiler
 ├── harness.py      # Top-level AcousticSemanticHarness (the "OS")
 └── architecture.py # ASCII architecture diagram
+examples/
+├── run_demo.py     # Entry point: deterministic demo / full pipeline / GEPA
+└── audio/          # Test WAV files for agent testing (audio1.wav, audio2.wav)
+docs/               # Research papers (PDF) — theoretical background
 ```
 
 ## Key Concepts
