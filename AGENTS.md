@@ -8,6 +8,13 @@ ASIR (Acoustic Semantic Instruction Register) is a 7-layer semantic IR
 for hearing aids. It uses DSPy modules + GEPA optimizer to convert raw
 audio into optimized DSP parameters through LLM-powered reasoning.
 
+**使用情境**：助聽器在複雜場景（菜市場、多人對話）需動態調整 DSP。
+傳統固定規則不懂語意，ASIR 用 LLM 理解場景後再決定 DSP 參數。
+
+**I/O** (`harness.forward()`):
+- Input: `RawSignal`(2-ch PCM) + `user_action` + `audiogram_json` + `user_profile`
+- Output: `DSPParameterSet`(beam_weights, noise_mask, filter_coeffs, compression) + execution_depth + 語意中間結果
+
 ## File Organization
 
 - Every `.py` file is < 500 lines

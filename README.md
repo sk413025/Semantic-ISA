@@ -17,11 +17,64 @@
 
 ## What is ASIR?
 
-7-layer semantic instruction set architecture for hearing aids.
-用 DSPy modules + GEPA optimizer，把麥克風原始訊號轉換成最佳化的助聽器 DSP 參數。
+**問題**：傳統助聽器用固定規則做訊號處理（波束成形、降噪、增益）。
+在複雜聲學場景（菜市場、多人對話、迴響空間），固定規則無法理解「使用者想聽什麼」。
+
+**ASIR 的做法**：在傳統 DSP 之上加一層 LLM 語意推理。
+系統先用 numpy 做 deterministic 訊號分析（L1-L3），
+再用 LLM 理解場景語意、規劃處理策略（L4-L7），
+最後把語意決策翻譯回具體的 DSP 參數。
+
+### 使用情境
 
 ```
-Raw Audio (2-ch, 16kHz) → [L1-L3 deterministic DSP] → [L4-L7 LLM reasoning] → DSP Parameters
+助聽器麥克風 → ASIR → DSP 硬體
+                ↑
+            使用者偏好/動作
+```
+
+一個 72 歲的聽損使用者戴著助聽器走進菜市場。ASIR：
+1. 收到麥克風陣列的原始音訊（2 通道 PCM）
+2. L1-L3：分析出 SNR=-2dB、RT60=0.8s、能量集中在低頻 → 吵雜迴響環境
+3. L4：LLM 描述「正前方有人說話，背景是嘈雜的市場噪音和風扇聲」
+4. L5：LLM 判斷「使用者在菜市場跟攤販對話」，信心度 0.85
+5. L6：LLM 規劃策略 →「波束集中正前方 45°、啟用強降噪、NAL-NL2 增益」
+6. 翻譯成 DSP 參數：beam_weights, noise_mask, filter_coeffs, compression 設定
+7. L7：使用者說「太悶了」→ 更新偏好 → 下一幀降低降噪強度
+
+### 系統輸入 / 輸出
+
+**輸入（每幀）**：
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `raw_signal` | `RawSignal` | 2-ch PCM, 16kHz, 32ms/frame |
+| `user_action` | `str` | 使用者動作，如 `"太吵了"`, `"focus_front"`, `"none"` |
+| `audiogram_json` | `str` | 聽力圖 JSON，如 `{"250":30, "500":35, ...}` (dB HL) |
+| `user_profile` | `str` | 使用者描述，如 `"72歲男性，雙耳中度感音神經性聽損"` |
+
+**輸出**：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `dsp_params` | `DSPParameterSet` | beam_weights, noise_mask, filter_coeffs, compression_ratio, attack_ms, release_ms |
+| `execution_depth` | `str` | 本幀執行深度：`"fast"` / `"medium"` / `"full"` |
+| `scene_description` | `str` | L5 的場景理解文字（如有） |
+| `strategy_summary` | `str` | L6 的策略摘要文字（如有） |
+
+```python
+# 程式碼層面
+from asir.harness import AcousticSemanticHarness
+from asir.types import RawSignal
+
+harness = AcousticSemanticHarness(fast_lm=..., strong_lm=...)
+result = harness.forward(
+    raw_signal=raw_signal,
+    user_action="focus_front",
+    audiogram_json='{"250":30,"500":35,"1000":40,"2000":50,"4000":60}',
+    user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲",
+)
+print(result.dsp_params)  # → DSPParameterSet(...)
 ```
 
 ### 架構總覽

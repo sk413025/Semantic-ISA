@@ -4,6 +4,22 @@
 Converts raw microphone signals into optimized hearing aid DSP parameters
 via an LLM-powered pipeline with learnable routing decisions.
 
+## Use Case & I/O
+
+**情境**：助聽器在複雜聲學場景（菜市場、多人對話等）需要動態調整 DSP 參數。
+傳統固定規則無法理解「使用者想聽什麼」，ASIR 用 LLM 做語意推理來決定。
+
+**Input** (`harness.forward()`):
+- `raw_signal: RawSignal` — 2-ch PCM, 16kHz, 32ms/frame
+- `user_action: str` — 使用者動作 (`"太吵了"`, `"focus_front"`, `"none"`)
+- `audiogram_json: str` — 聽力圖 (`{"250":30, "500":35, ...}`)
+- `user_profile: str` — 使用者描述
+
+**Output** (`dspy.Prediction`):
+- `dsp_params: DSPParameterSet` — beam_weights, noise_mask, filter_coeffs, compression
+- `execution_depth: str` — `"fast"` / `"medium"` / `"full"`
+- `scene_description`, `strategy_summary` — 語意中間結果
+
 ## Quick Start
 
 ```bash
