@@ -1,6 +1,6 @@
 # ASIR — Acoustic Semantic IR for Hearing Aids
 
-**不要過度工程化。** 能用一行解決就不要寫三行。不要加「以後可能用到」的抽象、工具、框架。先做最簡單的方案，只在證明不夠時才加複雜度。加功能前先查 DSPy 和 MLflow 是否已內建支援——不要重複造輪子。
+**不要過度工程化。** 能用一行解決就不要寫三行。不要加「以後可能用到」的抽象、工具、框架。先做最簡單的方案，只在證明不夠時才加複雜度。加功能前先 web search 並深入 DSPy 和 MLflow 底層確認是否已內建支援——不要重複造輪子。
 
 7-layer semantic instruction set architecture using DSPy + GEPA.
 Converts raw microphone signals into optimized hearing aid DSP parameters

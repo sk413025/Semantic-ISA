@@ -60,6 +60,12 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 
 **跑完 eval 後，讀 MLflow artifact 中的 trace 判讀每層推理是否合理，不要只看分數。**
 
+**Agent 自動判讀規範：**
+- eval 跑完後，用 `mlflow.search_runs()` + `download_artifacts("eval_results.json")` 讀取結構化 trace
+- 逐場景檢查：L4 噪音描述是否反映 SNR、L5 場景是否合理、L6 NR 是否匹配噪音程度、L7 偏好是否正確更新
+- 判斷失敗原因：**LLM 推理偏差**（→ GEPA 優化目標，不改 code）vs **程式邏輯 bug**（→ 需要修 code）
+- 不要只報「2 failures」——要說明失敗的具體原因和是否需要行動
+
 ### Trace — 每場景推理鏈
 
 每個場景自動印出 L4→L5→L6→DSP→L7 推理鏈（不需要額外 flag）。

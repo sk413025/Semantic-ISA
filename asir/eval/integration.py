@@ -247,7 +247,7 @@ def test_end_to_end(examples, harness=None):
         strong_lm = dspy.LM("openai/gpt-4o-mini", api_key=api_key)
         dspy.configure(lm=fast_lm)
         harness = AcousticSemanticHarness(
-            fast_lm=fast_lm, strong_lm=strong_lm, enable_multimodal=False,
+            fast_lm=fast_lm, strong_lm=strong_lm, enable_multimodal=True,
         )
 
     e2e_failures = []

@@ -61,8 +61,8 @@ NOISE_TYPE_MAP = {
     "car_conversation": "car",
     "noisy_cafe_complaint": "babble",
     "severe_loss_quiet_home": "quiet",
-    "wet_market_vendor": "babble",         # 菜市場：密集多人對話
-    "market_too_muffled": "babble",
+    "wet_market_vendor": "market",          # 菜市場：多人+金屬碰撞+馬達
+    "market_too_muffled": "market",
 }
 
 # Scenario parameters (must match examples.py)
@@ -264,6 +264,34 @@ def _generate_synthetic_noise(noise_type, duration_s, sr, seed=42):
         b2, a2 = butter(2, 2000 / (sr / 2), btype='high')
         wind = lfilter(b2, a2, rng.normal(0, 0.3, n))
         noise += wind
+        return (noise / (np.max(np.abs(noise)) + 1e-10)).astype(np.float32)
+
+    elif noise_type == "market":
+        # 菜市場: babble + metallic transients (秤/硬幣/鐵盤) + motor rumble (冰箱/發電機)
+        noise = np.zeros(n)
+        # Multi-talker base (8 voices, denser than babble)
+        for i in range(8):
+            raw = rng.normal(0, 1, n)
+            b, a = butter(4, 4000 / (sr / 2))
+            filtered = lfilter(b, a, raw)
+            rate = 3 + rng.random() * 3
+            mod = 0.3 + 0.7 * np.abs(np.sin(
+                2 * np.pi * rate * np.arange(n) / sr + rng.random() * np.pi
+            ))
+            noise += filtered * mod * (0.3 + 0.7 * rng.random())
+        # Metallic transients (scale clangs, coin drops, utensils)
+        for _ in range(rng.integers(8, 20)):
+            t = rng.integers(0, n - int(0.02 * sr))
+            freq = rng.choice([2500, 3000, 3500])
+            dur = int(rng.uniform(0.005, 0.02) * sr)
+            env = np.exp(-10 * np.arange(dur) / dur)
+            noise[t:t + dur] += env * np.sin(2 * np.pi * freq * np.arange(dur) / sr) * 2.0
+        # Low-freq motor rumble (refrigerator compressors, generators)
+        rumble_raw = rng.normal(0, 1, n)
+        b, a = butter(3, [150 / (sr / 2), 300 / (sr / 2)], btype='band')
+        rumble = lfilter(b, a, rumble_raw)
+        rumble *= 0.5 + 0.5 * np.sin(2 * np.pi * 7 * np.arange(n) / sr)
+        noise += rumble * 0.5
         return (noise / (np.max(np.abs(noise)) + 1e-10)).astype(np.float32)
 
     elif noise_type == "crowd":

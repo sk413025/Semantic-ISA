@@ -243,17 +243,35 @@ def run_eval(program=None):
                     recent_scenes=[],
                 )
 
-            prefs = '{"noise_tolerance":"medium","processing_preference":"natural"}'
+            prefs = {"noise_tolerance": "medium", "processing_preference": "natural"}
+            user_action = str(getattr(ex, 'user_action', 'none'))
+
+            # L7 偏好回饋：有 user_action 時呼叫 ParseIntent + UpdatePreferences
+            if user_action != "none":
+                from asir.primitives.intent import ParseIntentSig, UpdatePreferencesSig
+                with dspy.context(lm=strong_lm):
+                    pref_update = dspy.ChainOfThought(UpdatePreferencesSig)(
+                        current_preferences=json.dumps(prefs, ensure_ascii=False),
+                        user_feedback=user_action,
+                        current_scene=scene.situation,
+                        feedback_history="",
+                    )
+                try:
+                    updated = json.loads(pref_update.updated_preferences_json)
+                    prefs.update(updated)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+
+            prefs_str = json.dumps(prefs, ensure_ascii=False)
             with dspy.context(lm=strong_lm):
                 strategy = strategy_gen(
                     scene=scene,
-                    user_prefs_str=prefs,
+                    user_prefs_str=prefs_str,
                     audiogram_json=str(ex.audiogram_json),
                 )
 
             dsp_params = comp_strategy_to_dsp_params(strategy)
 
-            user_action = str(getattr(ex, 'user_action', 'none'))
             with dspy.context(lm=fast_lm):
                 routing = pipeline_router(
                     signal_change_magnitude=1.0,
@@ -269,6 +287,7 @@ def run_eval(program=None):
                 strategy=strategy,
                 dsp_params=dsp_params,
                 execution_depth=str(routing.execution_depth).strip().lower(),
+                current_preferences=prefs if isinstance(prefs, dict) else None,
             )
 
             l4 = check_l4_perceptual(ex, pred)
