@@ -14,7 +14,7 @@ Usage:
 
 Output:
   examples/audio/speech/*.wav   (3 TTS speech clips, 16kHz mono)
-  examples/audio/scenarios/*.wav (8 stereo 16kHz WAV, one per eval scenario)
+  examples/audio/scenarios/*.wav (10 stereo 16kHz WAV, one per eval scenario)
 
 DEMAND dataset (optional, CC-BY 4.0):
   Place 16kHz channel-01 WAV files in examples/audio/noise/:
@@ -47,6 +47,8 @@ DEMAND_MAP = {
     "car_conversation": "TCAR",
     "noisy_cafe_complaint": "PCAFETER",
     "severe_loss_quiet_home": "DLIVING",
+    "wet_market_vendor": "SPSQUARE",       # 公共廣場（半開放，最像菜市場）
+    "market_too_muffled": "SPSQUARE",
 }
 
 # Noise type for synthetic fallback
@@ -59,6 +61,8 @@ NOISE_TYPE_MAP = {
     "car_conversation": "car",
     "noisy_cafe_complaint": "babble",
     "severe_loss_quiet_home": "quiet",
+    "wet_market_vendor": "babble",         # 菜市場：密集多人對話
+    "market_too_muffled": "babble",
 }
 
 # Scenario parameters (must match examples.py)
@@ -74,6 +78,8 @@ SCENARIOS = [
     {"name": "car_conversation", "snr_db": 6.0, "rt60_s": 0.15, "energy_db": 70.0},
     {"name": "noisy_cafe_complaint", "snr_db": 2.0, "rt60_s": 0.6, "energy_db": 75.0},
     {"name": "severe_loss_quiet_home", "snr_db": 25.0, "rt60_s": 0.4, "energy_db": 50.0},
+    {"name": "wet_market_vendor", "snr_db": 0.0, "rt60_s": 0.6, "energy_db": 78.0},
+    {"name": "market_too_muffled", "snr_db": 0.0, "rt60_s": 0.6, "energy_db": 78.0},
 ]
 
 SPEECH_SENTENCES = [

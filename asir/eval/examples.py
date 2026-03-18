@@ -206,4 +206,49 @@ def create_eval_examples():
         "audiogram_json",
     ))
 
+    # --- E9: 菜市場跟攤販對話（README 旗艦場景）---
+    examples.append(dspy.Example(
+        scenario="wet_market_vendor",
+        snr_db=0.0,
+        rt60_s=0.6,
+        n_active_sources=8,
+        energy_db=78.0,
+        temporal_pattern="modulated",
+        user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲",
+        user_action="none",
+        audiogram_json='{"250":30,"500":35,"1000":40,"2000":50,"4000":60}',
+        # 約束：README 描述的核心場景
+        expect_noisy=True,           # SNR=0 極吵
+        expect_reverberant=False,    # 半開放空間，RT60=0.6 中等
+        expect_strong_nr=True,       # 嘈雜菜市場 → 強降噪
+        expect_beam_focus=True,      # 跟攤販對話 → 集中波束
+    ).with_inputs(
+        "scenario", "snr_db", "rt60_s", "n_active_sources",
+        "energy_db", "temporal_pattern", "user_profile", "user_action",
+        "audiogram_json",
+    ))
+
+    # --- E10: 菜市場 + 使用者抱怨「太悶了」（README L7 回饋場景）---
+    examples.append(dspy.Example(
+        scenario="market_too_muffled",
+        snr_db=0.0,
+        rt60_s=0.6,
+        n_active_sources=8,
+        energy_db=78.0,
+        temporal_pattern="modulated",
+        user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲",
+        user_action="太悶了",
+        audiogram_json='{"250":30,"500":35,"1000":40,"2000":50,"4000":60}',
+        # 約束：使用者抱怨降噪太強 → 系統應降低降噪
+        expect_noisy=True,           # 場景仍然吵
+        expect_reverberant=False,
+        expect_strong_nr=False,      # ★ 使用者說「太悶了」→ NR 不該太強
+        expect_beam_focus=True,      # 仍在對話
+        expect_full_depth=True,      # 有 user_action → full pipeline
+    ).with_inputs(
+        "scenario", "snr_db", "rt60_s", "n_active_sources",
+        "energy_db", "temporal_pattern", "user_profile", "user_action",
+        "audiogram_json",
+    ))
+
     return examples

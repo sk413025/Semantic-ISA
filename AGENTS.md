@@ -72,7 +72,9 @@ examples/audio/
     ├── restaurant_dinner.wav  # SNR=3dB,  energy=72dB SPL
     ├── church_ceremony.wav    # SNR=12dB, energy=60dB SPL, RT60=2.5s
     ├── quiet_library.wav      # SNR=30dB, energy=40dB SPL
-    └── ...                    # 8 total, one per eval scenario
+    ├── wet_market_vendor.wav  # SNR=0dB,  energy=78dB SPL (README 旗艦場景)
+    ├── market_too_muffled.wav # SNR=0dB,  energy=78dB SPL (「太悶了」回饋)
+    └── ...                    # 10 total, one per eval scenario
 ```
 
 ### How scenario audio is generated
