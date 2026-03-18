@@ -107,16 +107,34 @@
       "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: {\"noise_sources\":[{\"type\":\"impulsive\",\"directi"
     },
     {
+      "scenario": "street_phone_call",
+      "layer": "L7",
+      "check": "preference_stable",
+      "detail": "User action='focus_front' is a command, not feedback. Prefs should be unchanged. Changed: True"
+    },
+    {
       "scenario": "supermarket_shopping",
       "layer": "L5",
       "check": "reverb_consistent",
       "detail": "RT60=1.0s → scene should mention reverb. Got: 使用者正在參加一個大型的社交聚會，環境中充滿了各種高頻和衝擊性的聲音，包括多方的對話、活動聲和周圍噪音。這樣"
     },
     {
+      "scenario": "supermarket_shopping",
+      "layer": "DSP",
+      "check": "beam_appropriate",
+      "detail": "Expected wide beam (>= 45°) but width=25°"
+    },
+    {
       "scenario": "noisy_cafe_complaint",
       "layer": "L4",
       "check": "noise_consistent",
       "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\n    \"noise_sources\": [\n        {\n            "
+    },
+    {
+      "scenario": "noisy_cafe_complaint",
+      "layer": "L6",
+      "check": "nr_matches_scene",
+      "detail": "Noisy scene → NR agg=0.30, expected >= 0.4"
     },
     {
       "scenario": "severe_loss_quiet_home",

@@ -206,6 +206,7 @@ def test_end_to_end(examples):
                 execution_depth=str(
                     getattr(result, 'execution_depth', 'full')
                 ).strip().lower(),
+                current_preferences=getattr(result, 'current_preferences', None),
             )
 
             # Run constraint checks (reuse metrics.py)
@@ -243,6 +244,15 @@ def test_end_to_end(examples):
                 "scenario": name, "layer": "pipeline",
                 "check": "execution", "detail": str(e)[:200],
             })
+
+        # ★ v0.8: 重置 harness 狀態，避免場景間偏好累積互相影響
+        harness.current_preferences = {
+            "noise_tolerance": "medium",
+            "processing_preference": "natural",
+            "environment_awareness": "moderate",
+            "known_situations": ["菜市場: 增強正前方, 保留環境感"]
+        }
+        harness.feedback_history = []
 
     # Summary
     if any(v for v in layer_scores.values()):

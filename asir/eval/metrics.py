@@ -30,6 +30,7 @@ expect_beam_focus        → check_dsp_output         → beam_appropriate: 預�
 
 user_action              → check_l7_routing         → action_triggers_full: 有動作→depth=full
 (always)                 → check_l7_routing         → depth_valid: fast/medium/full
+expect_preference_updated → check_l7_routing        → preference_updated/stable: 偏好是否正確更新
 
 === Field Name Coupling ===
 
@@ -420,6 +421,39 @@ def check_l7_routing(example, pred):
         results["depth_valid"] = (True, f"depth='{depth}'")
     else:
         results["depth_valid"] = (False, f"depth='{depth}' not in (fast/medium/full)")
+
+    # ★ v0.8: 偏好持久化檢查（僅 integration eval 有此欄位）
+    expect_pref_updated = getattr(example, 'expect_preference_updated', None)
+    current_prefs = getattr(pred, 'current_preferences', None)
+    if expect_pref_updated is not None and current_prefs is not None:
+        default_prefs = {
+            "noise_tolerance": "medium",
+            "processing_preference": "natural",
+            "environment_awareness": "moderate",
+        }
+        prefs_changed = False
+        if isinstance(current_prefs, dict):
+            for key, default_val in default_prefs.items():
+                if key in current_prefs and current_prefs[key] != default_val:
+                    prefs_changed = True
+                    break
+            # 也檢查是否有新增的偏好 key（除了原本的 4 個）
+            new_keys = set(current_prefs.keys()) - set(default_prefs.keys()) - {"known_situations"}
+            if new_keys:
+                prefs_changed = True
+
+        if expect_pref_updated:
+            results["preference_updated"] = (
+                prefs_changed,
+                f"User action='{user_action}' should update preferences. "
+                f"Changed: {prefs_changed}, prefs: {current_prefs}"
+            )
+        else:
+            results["preference_stable"] = (
+                not prefs_changed,
+                f"User action='{user_action}' is a command, not feedback. "
+                f"Prefs should be unchanged. Changed: {prefs_changed}"
+            )
 
     return results
 

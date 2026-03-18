@@ -114,6 +114,7 @@ def create_eval_examples():
         expect_reverberant=False,    # 戶外
         expect_strong_nr=True,       # 極吵 → 強降噪
         expect_beam_focus=True,      # focus_front 指令
+        expect_preference_updated=False,  # 指令，不是偏好回饋
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",
@@ -178,6 +179,7 @@ def create_eval_examples():
         expect_strong_nr=True,       # 使用者明確抱怨 → 加強降噪
         expect_beam_focus=True,
         expect_full_depth=True,      # 有 user_action → 應跑 full pipeline
+        expect_preference_updated=True,  # 抱怨噪音 → 更新偏好
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",
@@ -245,6 +247,7 @@ def create_eval_examples():
         expect_strong_nr=False,      # ★ 使用者說「太悶了」→ NR 不該太強
         expect_beam_focus=True,      # 仍在對話
         expect_full_depth=True,      # 有 user_action → full pipeline
+        expect_preference_updated=True,  # 抱怨太悶 → 更新偏好
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",

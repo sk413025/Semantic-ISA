@@ -284,22 +284,24 @@ class AcousticSemanticHarness(dspy.Module):
                 user_history=json.dumps(self.current_preferences, ensure_ascii=False)
             )
 
-            if "dissatisfied" in user_action or "satisfied" in user_action:
-                pref_update = self.update_prefs(
-                    current_preferences=json.dumps(self.current_preferences,
-                                                    ensure_ascii=False),
-                    user_feedback=user_action,
-                    current_scene=scene.situation,
-                    feedback_history=" | ".join(self.feedback_history[-5:])
-                )
-                self.feedback_history.append(
-                    f"{user_action} in {scene.situation[:50]}"
-                )
-                try:
-                    updated = json.loads(pref_update.updated_preferences_json)
-                    self.current_preferences.update(updated)
-                except:
-                    pass
+            # ★ v0.8: 移除硬編碼英文 gate（"dissatisfied"/"satisfied"）。
+            # UpdatePreferencesSig 是 LLM ChainOfThought，
+            # 語意決定是否需要更新偏好，取代 keyword matching。
+            pref_update = self.update_prefs(
+                current_preferences=json.dumps(self.current_preferences,
+                                                ensure_ascii=False),
+                user_feedback=user_action,
+                current_scene=scene.situation,
+                feedback_history=" | ".join(self.feedback_history[-5:])
+            )
+            self.feedback_history.append(
+                f"{user_action} in {scene.situation[:50]}"
+            )
+            try:
+                updated = json.loads(pref_update.updated_preferences_json)
+                self.current_preferences.update(updated)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
 
         # ═══ 第六層：策略生成（LLM + deterministic 混合）═══
         # ★ 不再用外層 try/except — GenerateFullStrategy 內部已有

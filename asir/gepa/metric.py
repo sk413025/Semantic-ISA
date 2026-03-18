@@ -237,7 +237,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                 if hasattr(gold, 'user_prefs_natural') and gold.user_prefs_natural:
                     if budget == 'aggressive':
                         # 除非使用者不滿意，否則偏好自然的人不該用 aggressive
-                        if hasattr(gold, 'user_action') and 'dissatisfied' not in str(gold.user_action):
+                        if hasattr(gold, 'user_action') and str(gold.user_action) == 'none':
                             pred_feedback.append(
                                 "User prefers natural sound but budget='aggressive'. "
                                 "Only use aggressive if user explicitly dissatisfied."
