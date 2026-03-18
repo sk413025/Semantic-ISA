@@ -1,0 +1,18 @@
+[project]
+name = "asir"
+version = "0.4.0"
+description = "Acoustic Semantic IR — 7-layer semantic instruction set architecture for hearing aids using DSPy + GEPA"
+requires-python = ">=3.10"
+dependencies = [
+    "dspy>=2.6",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends._legacy:_Backend"
