@@ -1,5 +1,7 @@
 # AGENTS.md — Cross-Tool Agent Instructions
 
+**不要過度工程化。** 能用一行解決就不要寫三行。不要加「以後可能用到」的抽象、工具、框架。先做最簡單的方案，只在證明不夠時才加複雜度。加功能前先查 DSPy 和 MLflow 是否已內建支援——不要重複造輪子。
+
 This file provides context for AI coding agents (Claude Code, Codex, etc.).
 
 ## Repository Purpose
@@ -55,6 +57,8 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 ```
 
 **所有 eval 結果記錄到 MLflow。** 查看歷史與比較：`mlflow ui`
+
+**跑完 eval 後，讀 MLflow artifact 中的 trace 判讀每層推理是否合理，不要只看分數。**
 
 ### Trace — 每場景推理鏈
 
