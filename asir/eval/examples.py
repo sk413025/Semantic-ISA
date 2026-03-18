@@ -21,13 +21,12 @@ Evaluation Examples — 跟 gepa/training.py 的 5 個場景完全分離
   audiogram_json    str    聽力圖 JSON（傳給 L6 NAL-NL2 增益計算）
 
 約束欄位（由 metrics.py 的 check 函數讀取，見 metrics.py 頂部的 mapping 表）:
-  expect_scene_keywords  list[str]  → check_l5: situation 應包含的關鍵字
+  expect_noisy           bool       → check_l5: noise_level_consistent（場景噪音描述一致）
+  expect_reverberant     bool       → check_l5: reverb_consistent（高迴響場景應提到迴響）
   expect_strong_nr       bool       → check_l6: NR aggressiveness 應 > 0.4
   expect_beam_focus      bool       → check_dsp: beam_width 應 < 90°
+  expect_high_gain       bool       → check_dsp: high_gain_for_severe_loss（重度聽損→高增益）
   expect_full_depth      bool       → check_l7: execution_depth 應為 "full"
-  expect_noisy           bool       （metadata，未直接用於 check）
-  expect_reverberant     bool       （metadata，未直接用於 check）
-  expect_high_gain       bool       （metadata，未直接用於 check）
 """
 import dspy
 
@@ -51,8 +50,6 @@ def create_eval_examples():
         expect_noisy=True,           # SNR=3 一定吵
         expect_reverberant=False,    # RT60=0.7 中等，不算高迴響
         expect_strong_nr=True,       # 吵 → 應啟用降噪
-        expect_scene_keywords=["restaurant", "dinner", "dining", "conversation",
-                               "餐廳", "吃飯", "對話", "聚餐"],
         expect_beam_focus=True,      # 多人場景應集中波束
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -74,8 +71,6 @@ def create_eval_examples():
         expect_noisy=False,          # SNR=12 算可以
         expect_reverberant=True,     # RT60=2.5 非常迴響
         expect_strong_nr=False,      # 不太吵，不需強降噪
-        expect_scene_keywords=["church", "hall", "ceremony", "reverb",
-                               "教堂", "禮堂", "迴響", "典禮"],
         expect_beam_focus=True,      # 講台方向
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -97,8 +92,6 @@ def create_eval_examples():
         expect_noisy=False,          # SNR=30 很安靜
         expect_reverberant=False,
         expect_strong_nr=False,      # 安靜場景不該強降噪
-        expect_scene_keywords=["library", "quiet", "silent",
-                               "圖書館", "安靜"],
         expect_beam_focus=False,     # 安靜場景不需要集中波束
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -120,10 +113,7 @@ def create_eval_examples():
         expect_noisy=True,           # SNR=-2 極吵
         expect_reverberant=False,    # 戶外
         expect_strong_nr=True,       # 極吵 → 強降噪
-        expect_scene_keywords=["street", "traffic", "outdoor", "phone",
-                               "馬路", "交通", "戶外", "電話"],
         expect_beam_focus=True,      # focus_front 指令
-        expect_user_action_respected=True,  # 有明確指令
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
         "energy_db", "temporal_pattern", "user_profile", "user_action",
@@ -144,8 +134,6 @@ def create_eval_examples():
         expect_noisy=True,           # SNR=8 中等偏吵
         expect_reverberant=True,     # RT60=1.0 有迴響
         expect_strong_nr=False,      # 中等，不需最強
-        expect_scene_keywords=["supermarket", "shop", "store",
-                               "超市", "賣場", "購物"],
         expect_beam_focus=False,     # 購物不特別集中
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -167,8 +155,6 @@ def create_eval_examples():
         expect_noisy=True,           # SNR=6 引擎+風噪
         expect_reverberant=False,    # 車內空間小
         expect_strong_nr=False,      # 中等降噪
-        expect_scene_keywords=["car", "vehicle", "driving",
-                               "車", "開車", "行駛"],
         expect_beam_focus=True,      # 副駕對話方向
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -190,10 +176,7 @@ def create_eval_examples():
         expect_noisy=True,
         expect_reverberant=False,
         expect_strong_nr=True,       # 使用者明確抱怨 → 加強降噪
-        expect_scene_keywords=["cafe", "coffee", "noisy",
-                               "咖啡", "吵"],
         expect_beam_focus=True,
-        expect_user_action_respected=True,
         expect_full_depth=True,      # 有 user_action → 應跑 full pipeline
     ).with_inputs(
         "scenario", "snr_db", "rt60_s", "n_active_sources",
@@ -215,7 +198,6 @@ def create_eval_examples():
         expect_noisy=False,
         expect_reverberant=False,
         expect_strong_nr=False,      # 安靜場景
-        expect_scene_keywords=["home", "quiet", "家", "安靜"],
         expect_beam_focus=False,
         expect_high_gain=True,       # 重度聽損 → 高增益
     ).with_inputs(

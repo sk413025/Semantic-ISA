@@ -13,14 +13,16 @@ snr_db                   → check_l4_perceptual      → noise_consistent: 低 
 (always)                 → check_l4_perceptual      → env_reasonable: 環境描述不為空
 (always)                 → check_l4_perceptual      → confidence_calibrated: [0.1, 0.95]
 
-expect_scene_keywords    → check_l5_scene           → scene_keyword_match: situation 包含預期關鍵字
-rt60_s                   → check_l5_scene           → reverb_awareness: 高 RT60 應提到迴響
+expect_noisy             → check_l5_scene           → noise_level_consistent: 場景噪音描述一致
+expect_reverberant       → check_l5_scene           → reverb_consistent: 高迴響場景應提到迴響
+n_active_sources         → check_l5_scene           → multi_source_aware: 多聲源→應提到多人/多聲源
 (always)                 → check_l5_scene           → scene_confidence: [0.1, 0.95]
 
 expect_strong_nr         → check_l6_strategy        → nr_matches_scene: NR 強度 vs 噪音程度
 (always)                 → check_l6_strategy        → strategy_has_reasoning: 策略有推理過程
 
 audiogram_json           → check_dsp_output         → gain_matches_loss: 高頻聽損→高頻增益大
+expect_high_gain         → check_dsp_output         → high_gain_for_severe_loss: 重度聽損→高增益
 snr_db                   → check_dsp_output         → nr_matches_noise: SNR 低→NR 強
 expect_beam_focus        → check_dsp_output         → beam_appropriate: 預期聚焦→窄波束
 (always)                 → check_dsp_output         → compression_reasonable: [1.0, 4.0]
@@ -130,11 +132,11 @@ def check_l4_perceptual(example, pred):
 
 def check_l5_scene(example, pred):
     """
-    L5 約束：場景理解是否合理？
+    L5 約束：場景理解是否跟聲學特性一致？
 
-    pred.scene.situation 是 LLM 對場景的描述。
-    因為 L4 的輸入是從 example 建構的（包含正確的 SNR/RT60），
-    LLM 應該能推理出正確的場景類型。
+    不測場景名稱猜對沒有（LLM 無法從數字推出「餐廳」vs「酒吧」），
+    而是測場景描述是否反映了聲學特性（吵/安靜、迴響大/小、多聲源/單人）。
+    這些都是 LLM 直接看到的數字，可以合理推論的。
     """
     results = {}
     scene = getattr(pred, 'scene', None)
@@ -142,13 +144,51 @@ def check_l5_scene(example, pred):
     if scene is None:
         return {"l5_available": (False, "No scene understanding produced")}
 
-    # 場景關鍵字（situation 是 SceneWithHistory 的輸出）
     scene_text = _safe_str(getattr(scene, 'situation', ''))
-    keywords = getattr(example, 'expect_scene_keywords', [])
-    if keywords:
-        results["scene_keyword_match"] = (
-            _has_any_keyword(scene_text, keywords),
-            f"Expected one of {keywords[:4]}... in: {scene_text[:100]}"
+
+    # 噪音程度一致性：LLM 看到 SNR=3dB + 5 聲源 → 描述應反映吵雜
+    expect_noisy = getattr(example, 'expect_noisy', None)
+    if expect_noisy is not None:
+        if expect_noisy:
+            noisy_words = ["noisy", "loud", "noise", "crowded", "busy", "chaotic",
+                           "multiple speaker", "multi-talker", "challenging",
+                           "吵", "嘈雜", "噪音", "多人", "擁擠", "嘈"]
+            results["noise_level_consistent"] = (
+                _has_any_keyword(scene_text, noisy_words),
+                f"SNR={example.snr_db}dB, {example.n_active_sources} sources "
+                f"→ scene should describe noisy conditions. Got: {scene_text[:100]}"
+            )
+        else:
+            # 安靜場景：不該被描述為極度嘈雜
+            extreme_noise = ["extremely noisy", "deafening", "unbearable",
+                             "extremely loud", "overwhelming noise"]
+            results["noise_level_consistent"] = (
+                not _has_any_keyword(scene_text, extreme_noise),
+                f"SNR={example.snr_db}dB → shouldn't describe as extremely noisy. "
+                f"Got: {scene_text[:100]}"
+            )
+
+    # 迴響一致性：LLM 看到 RT60=2.5s → 描述應提到迴響
+    expect_reverberant = getattr(example, 'expect_reverberant', None)
+    if expect_reverberant is not None and expect_reverberant:
+        reverb_words = ["reverb", "echo", "hall", "resonan", "large space",
+                        "spacious", "cathedral", "迴響", "回音", "殘響", "混響", "空間大"]
+        results["reverb_consistent"] = (
+            _has_any_keyword(scene_text, reverb_words),
+            f"RT60={example.rt60_s}s → scene should mention reverb. "
+            f"Got: {scene_text[:100]}"
+        )
+
+    # 多聲源感知：LLM 看到 n_active_sources=5 → 應提到多個聲源
+    n_sources = int(example.n_active_sources)
+    if n_sources >= 4:
+        multi_words = ["multiple", "several", "many", "group", "crowd",
+                       "conversation", "speaker", "talker", "voices", "busy",
+                       "多人", "多個", "群", "對話", "繁忙", "熱鬧"]
+        results["multi_source_aware"] = (
+            _has_any_keyword(scene_text, multi_words),
+            f"n_sources={n_sources} → scene should mention multiple sources. "
+            f"Got: {scene_text[:100]}"
         )
 
     # 信心度
@@ -162,15 +202,6 @@ def check_l5_scene(example, pred):
             )
         except (ValueError, TypeError):
             pass
-
-    # 迴響感知（RT60 > 1.5s 時場景描述應提到 reverb）
-    rt60 = float(example.rt60_s)
-    if rt60 > 1.5:
-        reverb_words = ["reverb", "echo", "hall", "resonan", "迴響", "回音", "殘響"]
-        results["reverb_awareness"] = (
-            _has_any_keyword(scene_text, reverb_words),
-            f"RT60={rt60}s → scene should mention reverb. Got: {scene_text[:100]}"
-        )
 
     return results
 
@@ -258,7 +289,19 @@ def check_dsp_output(example, pred):
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
-    # 2. NR aggressiveness vs 噪音程度
+    # 2. 重度聽損 → 高增益（expect_high_gain）
+    expect_high_gain = getattr(example, 'expect_high_gain', None)
+    if expect_high_gain and gain_gpf:
+        try:
+            max_gain = max(float(v) for v in gain_gpf.values())
+            results["high_gain_for_severe_loss"] = (
+                max_gain >= 20,
+                f"Severe hearing loss → max gain should be >= 20dB. Got: {max_gain:.1f}dB"
+            )
+        except (ValueError, TypeError):
+            pass
+
+    # 3. NR aggressiveness vs 噪音程度
     nr_agg = getattr(strategy, 'nr_aggressiveness', None)
     if nr_agg is not None:
         snr = float(example.snr_db)
@@ -277,7 +320,7 @@ def check_dsp_output(example, pred):
         except (ValueError, TypeError):
             pass
 
-    # 3. Beam focus 是否恰當
+    # 4. Beam focus 是否恰當
     beam_width = getattr(strategy, 'beam_width_deg', None)
     expect_focus = getattr(example, 'expect_beam_focus', None)
     if beam_width is not None and expect_focus is not None:
@@ -296,7 +339,7 @@ def check_dsp_output(example, pred):
         except (ValueError, TypeError):
             pass
 
-    # 4. Compression ratio 在合理範圍
+    # 5. Compression ratio 在合理範圍
     cr = getattr(strategy, 'compression_ratio', None)
     if cr is not None:
         try:
@@ -307,7 +350,7 @@ def check_dsp_output(example, pred):
         except (ValueError, TypeError):
             pass
 
-    # 5. DSP 參數結構完整（beam_weights + noise_mask + filter_coeffs）
+    # 6. DSP 參數結構完整（beam_weights + noise_mask + filter_coeffs）
     if dsp is not None:
         has_beam = hasattr(dsp, 'beam_weights') and dsp.beam_weights is not None
         has_mask = hasattr(dsp, 'noise_mask') and dsp.noise_mask is not None
