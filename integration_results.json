@@ -5,67 +5,73 @@
       "status": "PASS",
       "score": 1.0,
       "snr_target": 3.0,
-      "snr_actual": 4.8,
-      "energy_db": 76.8
+      "snr_actual": 8.5,
+      "energy_db": 72.0
     },
     {
       "scenario": "church_ceremony",
       "status": "PASS",
       "score": 1.0,
       "snr_target": 12.0,
-      "snr_actual": 8.2,
-      "energy_db": 75.9
+      "snr_actual": 11.0,
+      "energy_db": 60.0
     },
     {
       "scenario": "quiet_library",
       "status": "PASS",
       "score": 1.0,
       "snr_target": 30.0,
-      "snr_actual": 20.2,
-      "energy_db": 77.7
+      "snr_actual": 30.3,
+      "energy_db": 40.0
     },
     {
       "scenario": "street_phone_call",
       "status": "PASS",
       "score": 1.0,
       "snr_target": -2.0,
-      "snr_actual": 7.2,
-      "energy_db": 69.6
+      "snr_actual": 15.2,
+      "energy_db": 70.9
     },
     {
       "scenario": "supermarket_shopping",
       "status": "PASS",
       "score": 1.0,
       "snr_target": 8.0,
-      "snr_actual": 6.0,
-      "energy_db": 75.6
+      "snr_actual": 9.9,
+      "energy_db": 68.0
     },
     {
       "scenario": "car_conversation",
       "status": "PASS",
       "score": 1.0,
       "snr_target": 6.0,
-      "snr_actual": 6.1,
-      "energy_db": 77.4
+      "snr_actual": 10.8,
+      "energy_db": 70.0
     },
     {
       "scenario": "noisy_cafe_complaint",
       "status": "PASS",
       "score": 1.0,
       "snr_target": 2.0,
-      "snr_actual": 4.7,
-      "energy_db": 77.3
+      "snr_actual": 7.9,
+      "energy_db": 75.0
     },
     {
       "scenario": "severe_loss_quiet_home",
       "status": "PASS",
-      "score": 0.8,
+      "score": 1.0,
       "snr_target": 25.0,
-      "snr_actual": 2.8,
-      "energy_db": 76.1
+      "snr_actual": 17.3,
+      "energy_db": 50.0
     }
   ],
   "end_to_end_failures": [
+    {
+      "scenario": "restaurant_dinner",
+      "layer": "L4",
+      "check": "noise_consistent",
+      "detail": "SNR=3.0dB → noise desc should mention loudness. Got: [\n    {\n        \"type\": \"impulsive noise\",\n    "
+    },
     {
       "scenario": "restaurant_dinner",
       "layer": "L6",
@@ -74,12 +80,6 @@
     },
     {
       "scenario": "quiet_library",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=30.0dB → noise should be mild. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"ambient\",\n      "
-    },
-    {
-      "scenario": "quiet_library",
       "layer": "DSP",
       "check": "beam_appropriate",
       "detail": "Expected wide beam (>= 45°) but width=30°"
@@ -88,19 +88,7 @@
       "scenario": "street_phone_call",
       "layer": "L4",
       "check": "noise_consistent",
-      "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: [{\"type\": \"conversation\", \"direction\": \"omni\","
-    },
-    {
-      "scenario": "street_phone_call",
-      "layer": "L6",
-      "check": "nr_matches_scene",
-      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
-    },
-    {
-      "scenario": "street_phone_call",
-      "layer": "L7",
-      "check": "action_triggers_full",
-      "detail": "User action='focus_front' but depth='medium', expected 'full'"
+      "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"im"
     },
     {
       "scenario": "supermarket_shopping",
@@ -112,25 +100,7 @@
       "scenario": "noisy_cafe_complaint",
       "layer": "L4",
       "check": "noise_consistent",
-      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\"noise_sources\":[{\"type\":\"background_noise\",\"d"
-    },
-    {
-      "scenario": "noisy_cafe_complaint",
-      "layer": "L6",
-      "check": "nr_matches_scene",
-      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
-    },
-    {
-      "scenario": "noisy_cafe_complaint",
-      "layer": "L7",
-      "check": "action_triggers_full",
-      "detail": "User action='太吵了' but depth='fast', expected 'full'"
-    },
-    {
-      "scenario": "severe_loss_quiet_home",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=25.0dB → noise should be mild. Got: {\n    \"noise_sources\": [\n        {\n            \"type\": \"envi"
+      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"low"
     },
     {
       "scenario": "severe_loss_quiet_home",

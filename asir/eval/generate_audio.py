@@ -62,15 +62,18 @@ NOISE_TYPE_MAP = {
 }
 
 # Scenario parameters (must match examples.py)
+# energy_db controls the overall level of the output WAV:
+#   comp_extract_full_features uses: 10*log10(mean(s²)) + 94
+#   So target RMS amplitude = 10^((energy_db - 94) / 20)
 SCENARIOS = [
-    {"name": "restaurant_dinner", "snr_db": 3.0, "rt60_s": 0.7},
-    {"name": "church_ceremony", "snr_db": 12.0, "rt60_s": 2.5},
-    {"name": "quiet_library", "snr_db": 30.0, "rt60_s": 0.6},
-    {"name": "street_phone_call", "snr_db": -2.0, "rt60_s": 0.1},
-    {"name": "supermarket_shopping", "snr_db": 8.0, "rt60_s": 1.0},
-    {"name": "car_conversation", "snr_db": 6.0, "rt60_s": 0.15},
-    {"name": "noisy_cafe_complaint", "snr_db": 2.0, "rt60_s": 0.6},
-    {"name": "severe_loss_quiet_home", "snr_db": 25.0, "rt60_s": 0.4},
+    {"name": "restaurant_dinner", "snr_db": 3.0, "rt60_s": 0.7, "energy_db": 72.0},
+    {"name": "church_ceremony", "snr_db": 12.0, "rt60_s": 2.5, "energy_db": 60.0},
+    {"name": "quiet_library", "snr_db": 30.0, "rt60_s": 0.6, "energy_db": 40.0},
+    {"name": "street_phone_call", "snr_db": -2.0, "rt60_s": 0.1, "energy_db": 80.0},
+    {"name": "supermarket_shopping", "snr_db": 8.0, "rt60_s": 1.0, "energy_db": 68.0},
+    {"name": "car_conversation", "snr_db": 6.0, "rt60_s": 0.15, "energy_db": 70.0},
+    {"name": "noisy_cafe_complaint", "snr_db": 2.0, "rt60_s": 0.6, "energy_db": 75.0},
+    {"name": "severe_loss_quiet_home", "snr_db": 25.0, "rt60_s": 0.4, "energy_db": 50.0},
 ]
 
 SPEECH_SENTENCES = [
@@ -406,9 +409,16 @@ def generate_all():
             mixed = apply_reverb(mixed, sc["rt60_s"], SR)
             print(f"    Applied reverb RT60={sc['rt60_s']}s")
 
-        # Normalize
-        peak = np.max(np.abs(mixed)) + 1e-10
-        mixed = (mixed / peak * 0.9).astype(np.float32)
+        # Energy-aware normalization:
+        # comp_extract_full_features uses: energy_db = 10*log10(mean(s²)) + 94
+        # So target RMS = 10^((target_energy_db - 94) / 20)
+        target_energy = sc.get("energy_db", 70.0)
+        target_rms = 10 ** ((target_energy - 94) / 20)
+        current_rms = np.sqrt(np.mean(mixed ** 2)) + 1e-10
+        mixed = (mixed * (target_rms / current_rms)).astype(np.float32)
+        # Clip to prevent overflow (but preserve relative levels)
+        if np.max(np.abs(mixed)) > 0.99:
+            mixed = mixed * (0.95 / np.max(np.abs(mixed)))
 
         # Save as stereo WAV
         _save_stereo_wav(out_path, mixed, SR)

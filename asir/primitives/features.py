@@ -20,14 +20,41 @@ def prim_extract_mfcc(signal: RawSignal, n_coeffs: int = 13) -> str:
 
 
 def prim_estimate_snr(signal: RawSignal) -> float:
-    """[PRIM] 第三層：信噪比估計 — deterministic"""
+    """
+    [PRIM] 第三層：信噪比估計 — deterministic
+
+    用短幀能量排序，取最高 30% 當語音+噪音、最低 30% 當純噪音。
+    SNR = 10*log10((P_high / P_low) - 1)
+    """
     s = np.array(signal.samples[0])
-    signal_power = np.mean(s ** 2)
-    # 簡化：用最低 10% 能量的幀作為噪音估計
-    frame_size = len(s) // 10
-    frames = [s[i:i+frame_size] for i in range(0, len(s) - frame_size, frame_size)]
-    noise_power = min(np.mean(f ** 2) for f in frames) if frames else 1e-10
-    return float(10 * np.log10(signal_power / (noise_power + 1e-10)))
+    if len(s) < 160:
+        return 0.0
+
+    # 分成 10ms 短幀（160 samples @ 16kHz）
+    frame_len = 160
+    n_frames = len(s) // frame_len
+    if n_frames < 3:
+        return 0.0
+
+    frame_powers = np.array([
+        np.mean(s[i * frame_len:(i + 1) * frame_len] ** 2)
+        for i in range(n_frames)
+    ])
+
+    # 排序：高能量幀 ≈ 語音+噪音，低能量幀 ≈ 純噪音
+    sorted_powers = np.sort(frame_powers)
+    n_low = max(1, n_frames * 3 // 10)
+    n_high = max(1, n_frames * 3 // 10)
+
+    noise_power = np.mean(sorted_powers[:n_low]) + 1e-10
+    signal_noise_power = np.mean(sorted_powers[-n_high:]) + 1e-10
+
+    # SNR = 10*log10((S+N)/N - 1)
+    if signal_noise_power <= noise_power * 1.1:
+        return 0.0
+
+    snr_linear = (signal_noise_power / noise_power) - 1.0
+    return float(10 * np.log10(max(snr_linear, 1e-10)))
 
 
 def prim_estimate_rt60(signal: RawSignal) -> float:
