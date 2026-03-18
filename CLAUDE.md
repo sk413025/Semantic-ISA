@@ -79,6 +79,14 @@ docs/               # Research papers (PDF) — theoretical background
 - **COMP**: dspy.Module that orchestrates PRIMs + ROUTINGs
 - **GEPA**: Genetic Evolution Programming Architecture — optimizes LLM prompts via reflective mutation on Pareto frontiers
 
+## Domain Glossary (quick reference)
+
+Audiology: **Audiogram** = 各頻率聽力閾值圖 (dB HL)；**NAL-NL2** = 根據 audiogram 算增益的處方公式；**SNHL** = 感音神經性聽損（老年聽損主因）
+
+Signal Processing: **Beamforming** = 多麥克風空間濾波（`beam_weights`）；**Spectral Subtraction** = 頻譜減噪；**Noise Mask** = 逐頻率 0-1 增益遮罩；**SNR** = 訊噪比 (dB)；**RT60** = 迴響衰減 60dB 所需秒數；**MFCC** = 模仿人耳的頻率特徵；**Compression** = 動態範圍壓縮（`compression_ratio`）
+
+Full glossary: see `README.md` § 領域術語 Glossary
+
 ## Dependencies
 
 - `dspy>=2.6` (with GEPA support)

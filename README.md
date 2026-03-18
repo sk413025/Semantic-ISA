@@ -144,6 +144,43 @@ PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa
 - 9 PRIMs: `describe_noise`, `describe_speech`, `describe_env`, `reason_scene`, `resolve_contradictions`, `gen_beam`, `gen_nr`, `parse_intent`, `update_preferences`
 - 5 ROUTERs: `aggregate_router`, `scene_router`, `strategy_planner`, `strategy_integrator`, `pipeline_router`
 
+## 領域術語 Glossary
+
+本專案橫跨聽力學、訊號處理、LLM 三個領域，以下是程式碼中常見的術語：
+
+### 聽力學 (Audiology)
+
+| 術語 | 說明 |
+|------|------|
+| **Audiogram（聽力圖）** | 量測聽力閾值的圖表。橫軸是頻率（250–8000 Hz），縱軸是聽力損失程度（dB HL）。本系統以 JSON 輸入，如 `{"250":30, "1000":40}` 表示 250Hz 損失 30dB |
+| **NAL-NL2** | National Acoustic Laboratories' Non-Linear 2 — 澳洲國家聲學實驗室開發的**助聽器增益處方公式**。根據 audiogram 計算每個頻率該放大多少 dB，是業界最廣泛使用的處方之一。本系統的 `prim_generate_gain_params()` 實作簡化版 NAL-NL2 |
+| **感音神經性聽損 (SNHL)** | Sensorineural hearing loss — 內耳毛細胞或聽神經損傷造成的聽力損失，是老年聽損最常見的類型。特徵：高頻損失較嚴重、需要非線性放大 |
+| **dB HL** | Decibels Hearing Level — 聽力圖的單位。0 dB HL = 正常聽力閾值，數字越大聽損越嚴重（30=輕度, 50=中度, 70=重度） |
+
+### 訊號處理 (Signal Processing)
+
+| 術語 | 說明 |
+|------|------|
+| **Beamforming（波束成形）** | 用多支麥克風的相位差，計算空間濾波器權重（`beam_weights`），增強特定方向的聲音、抑制其他方向。本系統用 delay-and-sum beamformer |
+| **Spectral Subtraction（頻譜相減）** | 從帶噪訊號的頻譜中減去估計的噪音頻譜，得到降噪後的訊號。`comp_spectral_subtract()` 實作此演算法 |
+| **Noise Mask（噪音遮罩）** | 頻域中的逐頻率增益遮罩（`noise_mask`），值在 0–1 之間。0 = 完全抑制該頻率，1 = 完全保留 |
+| **SNR** | Signal-to-Noise Ratio（訊噪比），單位 dB。正值表示語音比噪音大，負值表示噪音蓋過語音。菜市場大約 -5~5 dB |
+| **RT60** | Reverberation Time 60 — 聲音能量衰減 60 dB 所需的時間（秒）。反映空間迴響程度。0.3s = 乾燥（小房間），>1s = 高迴響（大廳） |
+| **MFCC** | Mel-Frequency Cepstral Coefficients — 模仿人耳頻率感知的特徵向量，廣泛用於語音辨識。本系統在 L3 提取作為聲學特徵摘要 |
+| **FFT** | Fast Fourier Transform — 將時域訊號轉換為頻域表示，是幾乎所有頻域處理的基礎 |
+| **Compression（動態壓縮）** | 將大音量壓小、小音量放大，縮小動態範圍。`compression_ratio` 2:1 表示輸入增加 2dB，輸出只增加 1dB。助聽器必備功能，保護殘餘聽力 |
+| **PCM** | Pulse-Code Modulation — 未壓縮的數位音訊格式，每個 sample 是一個浮點數。本系統的 `RawSignal.samples` 就是 PCM 資料 |
+
+### LLM / DSPy
+
+| 術語 | 說明 |
+|------|------|
+| **DSPy** | Declarative Self-improving Python — Stanford 開發的 LLM programming framework。用 Signature 定義 I/O，用 Module 組合，用 Optimizer 自動改進 prompt |
+| **Signature** | DSPy 中定義 LLM 任務的 I/O schema（類似函式型別宣告）。如 `DescribeNoiseSig` 定義「給定 features → 輸出 noise description」 |
+| **ChainOfThought** | DSPy 的推理模組，自動在 prompt 中加入「讓我一步步思考」，提升 LLM 推理品質 |
+| **GEPA** | Genetic Evolution Programming Architecture — 用演化策略最佳化 LLM prompt。在 Pareto frontier 上做 reflective mutation：LLM 反思失敗案例，自動改寫 prompt |
+| **Method A（Routing Predictors）** | 本系統的設計：用 learnable `ChainOfThought` predictor 做路由決策（而非 hardcoded if-else）。這些 predictor 是 GEPA 的主要最佳化目標 |
+
 ## 研究背景 / Research Papers
 
 `docs/` 目錄下的 PDF：
