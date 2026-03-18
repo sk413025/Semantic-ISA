@@ -105,17 +105,48 @@ Method A       = 用 learnable predictor 做路由, GEPA 最佳化目標
 ## Quick Start
 
 ```bash
-# L1-L3 deterministic demo（不需要 API key）
+# Step 0: 合成 10 個場景測試音檔（菜市場、餐廳、教堂等，只需跑一次）
+PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
+
+# Step 1: L1-L3 確定性 demo — 用菜市場音檔跑訊號處理（不需要 API key）
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
-# Full L1-L7 pipeline（需要 OPENAI_API_KEY）
-PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --full
+# Step 2: Full L1-L7 pipeline — 菜市場 → LLM 推理 → DSP 參數（需要 API key）
+PYTHONUTF8=1 python -X utf8 -m examples.run_demo --full
 
-# Full + GEPA prompt optimization
-PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa
+# Step 3: 跑測試（L1-L3 確定性 + 場景一致性驗證）
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
+
+# Step 4: 語意測試（L4-L7 推理品質，需要 API key）
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 ```
 
 > Windows 必須加 `PYTHONUTF8=1 python -X utf8`，否則會遇到 cp1252 encoding error。
+
+### 測試音檔
+
+`asir/eval/audio/` 存放所有測試用音檔（Git LFS 追蹤）：
+
+```
+asir/eval/audio/
+├── scenarios/          # 10 個場景混合音檔（stereo 16kHz, 5s）
+│   ├── wet_market_vendor.wav    # 菜市場：多人+金屬碰撞+馬達
+│   ├── market_too_muffled.wav   # 同上，搭配 user_action="太悶了"
+│   ├── restaurant_dinner.wav    # 餐廳多人對話
+│   └── ...（共 10 個場景）
+├── speech/             # 3 個語音片段（TTS 合成，16kHz mono）
+└── noise/              # （可選）DEMAND 噪音資料集
+```
+
+**誰用這些音檔：**
+- `examples/run_demo.py` — demo 用菜市場音檔跑完整管線
+- `tests/test_deterministic.py` — pytest 載入 10 個場景 WAV 跑 L1-L3
+- `tests/test_semantic.py` — pytest L4-L7 語意推理（用 `asir/eval/examples.py` 場景定義）
+- `tests/test_integration.py` — pytest 端對端（真實音檔 → 完整 harness）
+- `asir/eval/run.py` — semantic eval（10 場景 L4-L7 品質）
+- `asir/eval/integration.py` — integration eval（真實音檔 → 完整管線）
+
+**合成方式：** `asir/eval/generate_audio.py` — 用 numpy/scipy 合成不同噪音類型（babble、market、traffic 等），混合 TTS 語音，加入迴響。
 
 ## Tech Stack
 

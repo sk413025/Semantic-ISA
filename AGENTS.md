@@ -41,28 +41,29 @@ PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
 ## Testing & Evaluation
 
-**三個層級，依序執行：**
+**依序執行：**
 
 ```bash
-# Step 0: Generate scenario WAVs (only if missing)
+# Step 0: 合成 10 個場景測試音檔（只需跑一次，存在 asir/eval/audio/scenarios/）
 PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
 
-# Step 1: L1-L3 pytest — 確定性層 + eval 場景完整性（no API key, ~10s）
-#   驗證: 60 tests，含 10 場景 WAV 載入 → L1-L3 特徵提取
+# Step 1: L1-L3 + 場景一致性 pytest（no API key, 60 tests, ~10s）
+#   驗證: 確定性管線 + 10 場景 WAV 載入 + eval examples 與 WAV 檔 1:1 對應
 #   ★ 無 LLM 推理，不產生推理 trace
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# Step 2: Demo — 菜市場完整 L1-L7 推理（needs OPENAI_API_KEY, ~1min）
-#   驗證: 真實音檔 → 完整七層 → 使用者回饋「太悶了」→ 偏好更新
-#   ★ 推理 trace 記錄到 MLflow (experiment: asir-demo, artifact: demo_trace.json)
-PYTHONUTF8=1 python -X utf8 -m examples.run_demo --full
+# Step 2: L4-L7 語意推理 pytest（needs OPENAI_API_KEY, 52 tests, ~2min）
+#   驗證: 10 場景 × 5 層 + 菜市場 E9/E10 比較
+#   ★ 推理 trace 記錄到 MLflow (experiment: asir-eval-pytest)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 
-# Step 3: Semantic eval — 10 場景 L4-L7 語意品質（needs OPENAI_API_KEY, ~2min）
-#   ★ 推理 trace 記錄到 MLflow (experiment: asir-eval, artifact: eval_results.json)
+# Step 3: Integration 端對端 pytest（needs OPENAI_API_KEY, 50 tests, ~10min）
+#   驗證: 真實音檔 → 完整 harness → 每層 metrics check
+#   ★ 推理 trace 記錄到 MLflow (experiment: asir-integration-pytest)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_integration.py -v
+
+# 或者用 standalone eval runners（同樣邏輯，更詳細的 console trace 輸出）
 PYTHONUTF8=1 python -X utf8 -m asir.eval
-
-# Step 4: Integration eval — 真實音檔 → 完整 pipeline（~10min）
-#   ★ 推理 trace 記錄到 MLflow (experiment: asir-integration)
 PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 ```
 
@@ -72,10 +73,12 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 
 | 跑了什麼 | 推理 trace 在哪 | 怎麼看 |
 |----------|----------------|--------|
-| `pytest` | 無（L1-L3 確定性，無 LLM） | 看 console output |
-| `run_demo --full` | MLflow `asir-demo` → `demo_trace.json` | `mlflow ui` 或 `mlflow.search_runs(experiment_names=["asir-demo"])` |
+| `test_deterministic.py` | 無（L1-L3 確定性，無 LLM） | 看 console output |
+| `test_semantic.py` | MLflow `asir-eval-pytest` → `pytest_eval_results.json` | `mlflow ui` |
+| `test_integration.py` | MLflow `asir-integration-pytest` → `pytest_integration_results.json` | `mlflow ui` |
+| `run_demo --full` | MLflow `asir-demo` → `demo_trace.json` | `mlflow ui` |
 | `asir.eval` | MLflow `asir-eval` → `eval_results.json` | `mlflow ui` 或 `download_artifacts("eval_results.json")` |
-| `asir.eval --integration` | MLflow `asir-integration` | `mlflow ui` |
+| `asir.eval --integration` | MLflow `asir-eval` → `integration_results.json` | `mlflow ui` |
 
 **跑完 eval 後，讀 MLflow artifact 中的 trace 判讀每層推理是否合理，不要只看分數。**
 

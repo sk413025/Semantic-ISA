@@ -75,7 +75,9 @@ asir/
 ├── harness.py      # Top-level AcousticSemanticHarness (the "OS")
 └── architecture.py # ASCII architecture diagram
 tests/
-└── test_deterministic.py  # L1-L3 pytest + eval scenario tests (60 tests, no API key)
+├── test_deterministic.py  # L1-L3 + eval 場景一致性 (60 tests, no API key)
+├── test_semantic.py       # L4-L7 語意推理品質 (52 tests, needs API key)
+└── test_integration.py    # 端對端: 真實音檔 → 完整 harness (50 tests, needs API key)
 examples/
 └── run_demo.py     # Entry point: uses asir/eval/audio/ scenario WAVs
 docs/               # Development documents (PDF)
@@ -97,16 +99,18 @@ Signal Processing: **Beamforming** = 多麥克風空間濾波（`beam_weights`�
 ## Evaluation
 
 ```bash
-# L1-L3 pytest (no API key)
+# L1-L3 + eval 場景一致性 pytest (no API key, 60 tests)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# L4-L7 semantic eval (needs OPENAI_API_KEY in .env)
+# L4-L7 語意推理 pytest (needs OPENAI_API_KEY, 52 tests)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
+
+# Integration 端對端 pytest (needs OPENAI_API_KEY, 50 tests)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_integration.py -v
+
+# Standalone eval runners (same logic, more detailed console output)
 PYTHONUTF8=1 python -X utf8 -m asir.eval
-
-# Integration eval — real audio → full pipeline
 PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
-
-# Load optimized program
 PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
 ```
 
