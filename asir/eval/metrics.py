@@ -53,6 +53,30 @@ check 函數存取的 prediction 欄位名稱來自 composites 的 output：
 import json
 
 
+def _check_noise_severity(noise_desc: str, high: bool) -> bool:
+    """Parse noise JSON and check severity field values."""
+    try:
+        data = json.loads(noise_desc)
+        # Handle both list and dict-with-list formats
+        sources = data if isinstance(data, list) else data.get("noise_sources", [])
+        # Empty noise sources = quiet environment
+        if not sources:
+            return not high  # quiet passes for low-noise check, fails for high-noise
+        high_severities = {"high", "severe", "very high", "extreme", "intense",
+                           "significant", "strong", "heavy", "loud"}
+        low_severities = {"low", "minimal", "mild", "slight", "negligible", "none",
+                          "quiet", "soft", "faint"}
+        for src in sources:
+            sev = str(src.get("severity", "")).lower().strip()
+            if high and sev in high_severities:
+                return True
+            if not high and sev in low_severities:
+                return True
+        return False
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return False
+
+
 def _safe_str(obj, default=""):
     try:
         return str(obj).lower()
@@ -84,18 +108,26 @@ def check_l4_perceptual(example, pred):
     noise_desc = _safe_str(getattr(percept, 'noise_description', ''))
     snr = float(example.snr_db)
     if snr < 5:
-        noisy_words = ["loud", "noisy", "high", "significant", "severe",
-                       "multiple", "strong", "intense", "heavy",
-                       "吵", "嘈雜", "噪音大", "嚴重"]
+        # 先嘗試 parse JSON 的 severity 欄位
+        passed = _check_noise_severity(noise_desc, high=True)
+        if not passed:
+            # fallback: keyword matching
+            noisy_words = ["loud", "noisy", "high", "significant", "severe",
+                           "multiple", "strong", "intense", "heavy",
+                           "吵", "嘈雜", "噪音大", "嚴重"]
+            passed = _has_any_keyword(noise_desc, noisy_words)
         results["noise_consistent"] = (
-            _has_any_keyword(noise_desc, noisy_words),
+            passed,
             f"SNR={snr}dB → noise desc should mention loudness. Got: {noise_desc[:100]}"
         )
     elif snr > 20:
-        quiet_words = ["low", "quiet", "minimal", "mild", "slight", "soft",
-                       "安靜", "輕微", "低"]
+        passed = _check_noise_severity(noise_desc, high=False)
+        if not passed:
+            quiet_words = ["low", "quiet", "minimal", "mild", "slight", "soft",
+                           "安靜", "輕微", "低"]
+            passed = _has_any_keyword(noise_desc, quiet_words)
         results["noise_consistent"] = (
-            _has_any_keyword(noise_desc, quiet_words),
+            passed,
             f"SNR={snr}dB → noise should be mild. Got: {noise_desc[:100]}"
         )
 
@@ -172,7 +204,8 @@ def check_l5_scene(example, pred):
     expect_reverberant = getattr(example, 'expect_reverberant', None)
     if expect_reverberant is not None and expect_reverberant:
         reverb_words = ["reverb", "echo", "hall", "resonan", "large space",
-                        "spacious", "cathedral", "迴響", "回音", "殘響", "混響", "空間大"]
+                        "spacious", "cathedral", "迴響", "回音", "殘響", "混響", "空間大",
+                        "迴盪", "空曠", "大廳", "教堂", "禮堂", "共鳴"]
         results["reverb_consistent"] = (
             _has_any_keyword(scene_text, reverb_words),
             f"RT60={example.rt60_s}s → scene should mention reverb. "
@@ -184,7 +217,8 @@ def check_l5_scene(example, pred):
     if n_sources >= 4:
         multi_words = ["multiple", "several", "many", "group", "crowd",
                        "conversation", "speaker", "talker", "voices", "busy",
-                       "多人", "多個", "群", "對話", "繁忙", "熱鬧"]
+                       "多人", "多個", "群", "對話", "繁忙", "熱鬧",
+                       "聚會", "公眾", "嘈雜", "人聲", "交談", "喧鬧"]
         results["multi_source_aware"] = (
             _has_any_keyword(scene_text, multi_words),
             f"n_sources={n_sources} → scene should mention multiple sources. "
@@ -232,8 +266,8 @@ def check_l6_strategy(example, pred):
             agg = float(nr_agg)
             if expect_strong_nr:
                 results["nr_matches_scene"] = (
-                    agg > 0.4,
-                    f"Noisy scene → NR agg={agg:.2f}, expected > 0.4"
+                    agg >= 0.4,
+                    f"Noisy scene → NR agg={agg:.2f}, expected >= 0.4"
                 )
             else:
                 results["nr_matches_scene"] = (

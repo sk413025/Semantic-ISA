@@ -70,25 +70,25 @@
       "scenario": "restaurant_dinner",
       "layer": "L4",
       "check": "noise_consistent",
-      "detail": "SNR=3.0dB → noise desc should mention loudness. Got: [\n    {\n        \"type\": \"impulsive noise\",\n    "
+      "detail": "SNR=3.0dB → noise desc should mention loudness. Got: {\n    \"noise_sources\": [\n        {\n            "
     },
     {
-      "scenario": "restaurant_dinner",
-      "layer": "L6",
-      "check": "nr_matches_scene",
-      "detail": "Noisy scene → NR agg=0.40, expected > 0.4"
-    },
-    {
-      "scenario": "quiet_library",
-      "layer": "DSP",
-      "check": "beam_appropriate",
-      "detail": "Expected wide beam (>= 45°) but width=30°"
+      "scenario": "church_ceremony",
+      "layer": "L5",
+      "check": "reverb_consistent",
+      "detail": "RT60=2.5s → scene should mention reverb. Got: 公共聚會場所仍然存在的噪音挑戰，特別對於有聽力問題的年長者，這可能需要濾音設備或安靜空間來改善其聽音體驗。"
     },
     {
       "scenario": "street_phone_call",
       "layer": "L4",
       "check": "noise_consistent",
       "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"im"
+    },
+    {
+      "scenario": "street_phone_call",
+      "layer": "L6",
+      "check": "nr_matches_scene",
+      "detail": "Noisy scene → NR agg=0.30, expected >= 0.4"
     },
     {
       "scenario": "supermarket_shopping",
@@ -100,7 +100,7 @@
       "scenario": "noisy_cafe_complaint",
       "layer": "L4",
       "check": "noise_consistent",
-      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"low"
+      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"bac"
     },
     {
       "scenario": "severe_loss_quiet_home",

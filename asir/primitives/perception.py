@@ -35,7 +35,9 @@ class DescribeNoiseSig(dspy.Signature):
     )
 
     noise_sources_json: str = dspy.OutputField(
-        desc="JSON 格式的噪音源列表，每個包含 type/direction/temporal/severity"
+        desc="JSON 格式的噪音源列表，每個包含 type/direction/temporal/severity。"
+             "severity 必須反映 SNR：SNR<5dB→'high'或'severe'，"
+             "5-15dB→'moderate'，>15dB→'low'或'minimal'"
     )
     confidence: float = dspy.OutputField(
         desc="噪音描述的信心度 [0,1]"
