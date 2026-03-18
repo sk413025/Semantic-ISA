@@ -1,7 +1,7 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-Acoustic Semantic IR (ASIR) — Full 7-Layer Implementation
-Using DSPy + GEPA for Hearing Aid Scenario
+Acoustic Semantic IR (ASIR) v0.3 — Full 7-Layer Multimodal Implementation
+Using DSPy + GEPA + dspy.Audio + dspy.Image for Hearing Aid Scenario
 
 場景：72 歲的李伯伯戴著智慧助聽器，12:15 在菜市場買菜
 核心時刻：攤販在說價錢，四周多人交談，偶有金屬碰撞聲
@@ -29,6 +29,8 @@ else:
     load_dotenv()  # fallback: cwd
 
 import dspy
+import io
+import base64
 import numpy as np
 from enum import Enum
 from typing import Optional
@@ -145,6 +147,224 @@ class UserPreferences(BaseModel):
     processing_preference: str = Field(desc="處理偏好: natural/balanced/maximal_clarity")
     environment_awareness: str = Field(desc="環境感知需求: minimal/moderate/full")
     known_situations: list[str] = Field(desc="已知場景的偏好策略")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 多模態輔助函數 (Phase 1 + Phase 2)
+# ★ 將確定性層的輸出轉換為 dspy.Audio / dspy.Image
+# ═══════════════════════════════════════════════════════════════════════════
+
+def raw_signal_to_audio(signal) -> Optional[dspy.Audio]:
+    """
+    [Phase 1] 將 RawSignal 的 numpy 波形轉換為 dspy.Audio。
+    讓支援音訊的多模態 LM（Gemini、GPT-4o-audio）能「直接聽」原始音訊。
+
+    ★ 若 dspy.Audio.from_array 不可用，回退為手動 WAV 編碼。
+    """
+    try:
+        import struct as _struct
+        samples = np.array(signal.samples[0], dtype=np.float32)
+        # 歸一化到 [-1, 1]
+        peak = np.max(np.abs(samples)) + 1e-10
+        samples_norm = samples / peak
+
+        # 嘗試 dspy.Audio.from_array（需要 soundfile 套件）
+        try:
+            if hasattr(dspy.Audio, 'from_array'):
+                return dspy.Audio.from_array(samples_norm, signal.sample_rate)
+        except Exception:
+            pass  # soundfile 未安裝，回退到手動編碼
+
+        # 回退：手動編碼為 WAV base64（不需要額外套件）
+        pcm16 = (samples_norm * 32767).astype(np.int16)
+        buf = io.BytesIO()
+        n = len(pcm16)
+        buf.write(b'RIFF')
+        buf.write(_struct.pack('<I', 36 + n * 2))
+        buf.write(b'WAVE')
+        buf.write(b'fmt ')
+        buf.write(_struct.pack('<IHHIIHH', 16, 1, 1, signal.sample_rate,
+                               signal.sample_rate * 2, 2, 16))
+        buf.write(b'data')
+        buf.write(_struct.pack('<I', n * 2))
+        buf.write(pcm16.tobytes())
+        buf.seek(0)
+        encoded = base64.b64encode(buf.read()).decode()
+        return dspy.Audio(data=encoded, audio_format="wav")
+    except Exception:
+        return None
+
+
+def generate_spectrogram_image(signal, title: str = "Spectrogram") -> Optional[dspy.Image]:
+    """
+    [Phase 2] 從 RawSignal 生成 Mel-like 頻譜圖，回傳 dspy.Image。
+    讓所有 vision LM（GPT-4o、Claude、Gemini）都能「看到」音訊結構。
+
+    ★ 不依賴 librosa — 只用 numpy + matplotlib。
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # 非互動 backend（伺服器/CI 友善）
+        import matplotlib.pyplot as plt
+
+        samples = np.array(signal.samples[0])
+        sr = signal.sample_rate
+
+        # STFT
+        frame_size = min(256, len(samples))
+        hop = frame_size // 2
+        window = np.hanning(frame_size)
+        frames = []
+        for i in range(0, len(samples) - frame_size, hop):
+            frame = samples[i:i + frame_size]
+            windowed = frame * window
+            spectrum = np.abs(np.fft.rfft(windowed))
+            frames.append(spectrum)
+
+        if not frames:
+            return None
+
+        spectrogram = np.array(frames).T
+        spectrogram_db = 10 * np.log10(spectrogram + 1e-10)
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), dpi=100)
+        ax.imshow(spectrogram_db, aspect='auto', origin='lower',
+                  cmap='magma',
+                  extent=[0, signal.duration_ms, 0, sr / 2])
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Frequency (Hz)')
+        ax.set_title(title)
+        plt.colorbar(ax.images[0], ax=ax, label='dB')
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+
+        img_b64 = base64.b64encode(buf.read()).decode()
+        return dspy.Image(f"data:image/png;base64,{img_b64}")
+    except ImportError:
+        # matplotlib 未安裝 → 優雅降級
+        return None
+    except Exception:
+        return None
+
+
+def generate_mfcc_plot(signal, n_coeffs: int = 13) -> Optional[dspy.Image]:
+    """
+    [Phase 2] 生成簡化的 MFCC 視覺化圖（不依賴 librosa）。
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        samples = np.array(signal.samples[0])
+        frame_size = min(256, len(samples))
+        hop = frame_size // 2
+        window = np.hanning(frame_size)
+
+        # 計算簡化版 MFCC：對頻譜取 DCT 的近似
+        mfcc_frames = []
+        for i in range(0, len(samples) - frame_size, hop):
+            frame = samples[i:i + frame_size]
+            windowed = frame * window
+            power_spectrum = np.abs(np.fft.rfft(windowed)) ** 2
+            # 簡化的 Mel 濾波 + log + DCT（用 FFT 近似 DCT）
+            log_spectrum = np.log(power_spectrum + 1e-10)
+            mfcc = np.fft.dct_type2 if hasattr(np.fft, 'dct_type2') else None
+            # 用 real FFT 近似 DCT
+            ceps = np.fft.irfft(log_spectrum)[:n_coeffs]
+            mfcc_frames.append(ceps)
+
+        if not mfcc_frames:
+            return None
+
+        mfcc_matrix = np.array(mfcc_frames).T
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), dpi=100)
+        ax.imshow(mfcc_matrix, aspect='auto', origin='lower', cmap='viridis')
+        ax.set_xlabel('Frame')
+        ax.set_ylabel('MFCC Coefficient')
+        ax.set_title('MFCC Features')
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+
+        img_b64 = base64.b64encode(buf.read()).decode()
+        return dspy.Image(f"data:image/png;base64,{img_b64}")
+    except Exception:
+        return None
+
+
+def prim_load_audio(file_path: str = None, audio_bytes: bytes = None,
+                    sample_rate: int = 16000) -> tuple:
+    """
+    [Phase 1] 載入真實音訊檔案，回傳 (RawSignal, dspy.Audio) 元組。
+    支援 WAV 格式。若有 scipy 可用則支援更多格式。
+
+    ★ 這是 prim_sample_audio() 的真實音訊版本。
+    """
+    audio_obj = None
+
+    if file_path is not None:
+        # 嘗試用 dspy.Audio.from_file
+        if hasattr(dspy.Audio, 'from_file'):
+            audio_obj = dspy.Audio.from_file(file_path)
+
+        # 讀取波形數據
+        try:
+            from scipy.io import wavfile
+            sr, data = wavfile.read(file_path)
+            if data.dtype == np.int16:
+                data = data.astype(np.float32) / 32768.0
+            elif data.dtype == np.int32:
+                data = data.astype(np.float32) / 2147483648.0
+            if len(data.shape) == 1:
+                samples = [data.tolist(), data.tolist()]  # mono → dual
+                n_ch = 2
+            else:
+                samples = [data[:, i].tolist() for i in range(min(data.shape[1], 2))]
+                n_ch = len(samples)
+            signal = RawSignal(
+                samples=samples,
+                sample_rate=sr,
+                n_channels=n_ch,
+                duration_ms=float(len(data) / sr * 1000)
+            )
+            return signal, audio_obj
+        except ImportError:
+            # scipy 不可用，用 struct 手動解析 WAV
+            import struct
+            with open(file_path, 'rb') as f:
+                raw = f.read()
+            # 極簡 WAV parser
+            if raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
+                # 找 data chunk
+                idx = 12
+                while idx < len(raw) - 8:
+                    chunk_id = raw[idx:idx+4]
+                    chunk_size = struct.unpack('<I', raw[idx+4:idx+8])[0]
+                    if chunk_id == b'data':
+                        pcm = np.frombuffer(raw[idx+8:idx+8+chunk_size], dtype=np.int16)
+                        data = pcm.astype(np.float32) / 32768.0
+                        signal = RawSignal(
+                            samples=[data.tolist(), data.tolist()],
+                            sample_rate=sample_rate,
+                            n_channels=2,
+                            duration_ms=float(len(data) / sample_rate * 1000)
+                        )
+                        return signal, audio_obj
+                    idx += 8 + chunk_size
+
+    # Fallback：使用模擬信號
+    signal = prim_sample_audio(duration_ms=32.0)
+    audio_obj = raw_signal_to_audio(signal)
+    return signal, audio_obj
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -332,16 +552,18 @@ def comp_extract_full_features(signal: RawSignal) -> AcousticFeatures:
 # --- [PRIM] describe_noise: 從數值翻譯成感知語義 ---
 class DescribeNoiseSig(dspy.Signature):
     """
-    [PRIM] 第四層：噪音感知描述
-    BACKEND: LLM
+    [PRIM] 第四層：噪音感知描述（多模態版 v0.3）
+    BACKEND: LLM (multimodal-aware)
     RELIABILITY: source_identification_accuracy >= 0.80
-    
+
     將聲學特徵翻譯成人類可理解的噪音描述。
     這是一個不可分解的語義原子操作——因為噪音的
     類型、方向、時間模式之間有強耦合。
-    
-    ★ 這個翻譯在傳統演算法中不可能 ——
-      「多人交談聲，四周環繞」不是從 SNR 數字能精確計算出來的。
+
+    ★ 多模態輸入（v0.3 新增）：
+      - audio_clip: 讓支援音訊的 LM 直接「聽」原始音訊
+      - spectrogram: 讓所有 vision LM「看到」頻譜結構
+      - 兩者都是 Optional：不可用時退回純文字模式
     """
     acoustic_features: str = dspy.InputField(
         desc="聲學特徵的文字描述，包含 SNR、頻譜特性、能量等"
@@ -349,7 +571,16 @@ class DescribeNoiseSig(dspy.Signature):
     user_context: str = dspy.InputField(
         desc="使用者上下文：年齡、聽力狀況、當前活動"
     )
-    
+    # ★ Phase 3: 多模態輸入
+    audio_clip: Optional[dspy.Audio] = dspy.InputField(
+        desc="原始音訊片段（支援音訊的 LM 可直接聽取，不可用時為 None）",
+        default=None
+    )
+    spectrogram: Optional[dspy.Image] = dspy.InputField(
+        desc="Mel 頻譜圖（所有 vision LM 可看到音訊結構，不可用時為 None）",
+        default=None
+    )
+
     noise_sources_json: str = dspy.OutputField(
         desc="JSON 格式的噪音源列表，每個包含 type/direction/temporal/severity"
     )
@@ -361,15 +592,27 @@ class DescribeNoiseSig(dspy.Signature):
 # --- [PRIM] describe_speech: 語音感知描述 ---
 class DescribeSpeechSig(dspy.Signature):
     """
-    [PRIM] 第四層：語音感知描述
-    BACKEND: LLM
+    [PRIM] 第四層：語音感知描述（多模態版 v0.3）
+    BACKEND: LLM (multimodal-aware)
     RELIABILITY: n_speakers_accuracy >= 0.85 (for 1-4 speakers)
     FAILURE_MODE: >4 speakers -> n_speakers = -1 (meaning "many")
+
+    ★ 語音分析是多模態收益最大的 PRIM——
+      直接聽音訊可以判斷說話者數量、方向、可懂度。
     """
     acoustic_features: str = dspy.InputField(
         desc="聲學特徵，特別關注基頻、調變模式、能量包絡"
     )
-    
+    # ★ Phase 3: 多模態輸入
+    audio_clip: Optional[dspy.Audio] = dspy.InputField(
+        desc="原始音訊片段（直接聽取可更準確判斷說話者數量和可懂度）",
+        default=None
+    )
+    spectrogram: Optional[dspy.Image] = dspy.InputField(
+        desc="頻譜圖（可看到語音的諧波結構和時間模式）",
+        default=None
+    )
+
     n_speakers: int = dspy.OutputField(desc="估計說話者數量，>4 時返回 -1")
     target_direction: str = dspy.OutputField(desc="目標說話者方向描述")
     target_distance: str = dspy.OutputField(desc="估計距離: near/medium/far")
@@ -382,15 +625,27 @@ class DescribeSpeechSig(dspy.Signature):
 # --- [PRIM] describe_environment: 環境感知描述 ---
 class DescribeEnvironmentSig(dspy.Signature):
     """
-    [PRIM] 第四層：環境感知描述
-    BACKEND: LLM
+    [PRIM] 第四層：環境感知描述（多模態版 v0.3）
+    BACKEND: LLM (multimodal-aware)
     RELIABILITY: environment_type_accuracy >= 0.75
     FAILURE_MODE: novel_environment -> confidence < 0.5
+
+    ★ 環境辨識特別受益於頻譜圖——
+      混響特徵、背景噪音紋理在視覺上非常明顯。
     """
     acoustic_features: str = dspy.InputField(
         desc="聲學特徵，關注混響、頻譜分布、時域模式"
     )
-    
+    # ★ Phase 3: 多模態輸入
+    audio_clip: Optional[dspy.Audio] = dspy.InputField(
+        desc="原始音訊片段（直接聽環境聲可辨識場景類型）",
+        default=None
+    )
+    spectrogram: Optional[dspy.Image] = dspy.InputField(
+        desc="頻譜圖（混響、背景紋理在視覺上非常明顯）",
+        default=None
+    )
+
     environment_type: str = dspy.OutputField(desc="環境類型描述")
     acoustic_character: str = dspy.OutputField(desc="聲學特性描述")
     confidence: float = dspy.OutputField(desc="環境判斷信心度 [0,1]")
@@ -402,15 +657,18 @@ class DescribeEnvironmentSig(dspy.Signature):
 
 class ReasonAboutSceneSig(dspy.Signature):
     """
-    [PRIM] 第五層：場景推理
+    [PRIM] 第五層：場景推理（多模態版 v0.3）
     BACKEND: LLM (需要強推理能力 — 建議用大模型)
     RELIABILITY: situation_relevance >= 0.80
-    
+
     ★ 這是一條 Primitive，因為「理解場景」不能被分解為更小的
       語義操作——它需要同時考慮所有感知維度並做跨維度推理。
-    
+
     例如：「金屬碰撞聲可幫助李伯伯定位攤位」這個判斷
     需要同時理解噪音類型、使用者情境、和空間導航需求。
+
+    ★ v0.3: 頻譜圖提供視覺化的跨維度全景——
+      場景推理 LM 能一眼看到噪音、語音、環境聲的時頻結構。
     """
     noise_description: str = dspy.InputField(desc="第四層噪音描述")
     speech_description: str = dspy.InputField(desc="第四層語音描述")
@@ -421,7 +679,12 @@ class ReasonAboutSceneSig(dspy.Signature):
     recent_scene_history: str = dspy.InputField(
         desc="最近 N 個場景理解的摘要，用於連續性判斷"
     )
-    
+    # ★ Phase 3: 頻譜圖輔助場景推理（音訊太貴，只在 L4 直接聽）
+    spectrogram: Optional[dspy.Image] = dspy.InputField(
+        desc="頻譜圖（輔助跨維度推理：同時看到噪音、語音、環境聲的時頻結構）",
+        default=None
+    )
+
     situation: str = dspy.OutputField(desc="完整場景敘述")
     challenges_json: str = dspy.OutputField(
         desc="JSON: 聲學挑戰列表，每個含 challenge/severity/physical_cause"
@@ -797,7 +1060,10 @@ class FullPerceptualDescription(dspy.Module):
         self.aggregate_router = dspy.ChainOfThought(PerceptAggregateRoutingSig)
 
     def forward(self, acoustic_features: AcousticFeatures,
-                user_context: str) -> dspy.Prediction:
+                user_context: str,
+                audio_clip: Optional[dspy.Audio] = None,
+                spectrogram: Optional[dspy.Image] = None,
+                ) -> dspy.Prediction:
         features_str = (
             f"SNR: {acoustic_features.snr_db} dB, "
             f"RT60: {acoustic_features.rt60_s} s, "
@@ -808,17 +1074,31 @@ class FullPerceptualDescription(dspy.Module):
             f"MFCC: {acoustic_features.mfcc_summary}"
         )
 
-        # === Phase 1: 三個 PRIM 照跑（frozen prompt 不動）===
-        noise_result = self.describe_noise(
-            acoustic_features=features_str,
-            user_context=user_context
-        )
-        speech_result = self.describe_speech(
-            acoustic_features=features_str
-        )
-        env_result = self.describe_env(
-            acoustic_features=features_str
-        )
+        # === Phase 1: 三個 PRIM 照跑 ===
+        # ★ Phase 3: 根據可用的多模態資料動態構建 kwargs
+        noise_kwargs = {
+            "acoustic_features": features_str,
+            "user_context": user_context,
+        }
+        speech_kwargs = {
+            "acoustic_features": features_str,
+        }
+        env_kwargs = {
+            "acoustic_features": features_str,
+        }
+        # ★ 多模態注入：只在有資料時傳入，否則 LLM 只看文字
+        if audio_clip is not None:
+            noise_kwargs["audio_clip"] = audio_clip
+            speech_kwargs["audio_clip"] = audio_clip
+            env_kwargs["audio_clip"] = audio_clip
+        if spectrogram is not None:
+            noise_kwargs["spectrogram"] = spectrogram
+            speech_kwargs["spectrogram"] = spectrogram
+            env_kwargs["spectrogram"] = spectrogram
+
+        noise_result = self.describe_noise(**noise_kwargs)
+        speech_result = self.describe_speech(**speech_kwargs)
+        env_result = self.describe_env(**env_kwargs)
 
         # === Phase 2: Routing Predictor 決定怎麼聚合 ===
         routing = self.aggregate_router(
@@ -885,17 +1165,24 @@ class SceneWithHistory(dspy.Module):
         self.scene_router = dspy.ChainOfThought(SceneRoutingSig)
 
     def forward(self, percept: dspy.Prediction, user_profile: str,
-                recent_scenes: list[str]) -> dspy.Prediction:
+                recent_scenes: list[str],
+                spectrogram: Optional[dspy.Image] = None,
+                ) -> dspy.Prediction:
         history_str = " | ".join(recent_scenes[-5:]) if recent_scenes else "No history"
 
         # === Phase 1: reason_scene 必跑 ===
-        scene_result = self.reason_scene(
-            noise_description=percept.noise_description,
-            speech_description=percept.speech_description,
-            environment_description=percept.environment_description,
-            user_profile=user_profile,
-            recent_scene_history=history_str
-        )
+        # ★ Phase 3: 傳入頻譜圖輔助場景推理
+        scene_kwargs = {
+            "noise_description": percept.noise_description,
+            "speech_description": percept.speech_description,
+            "environment_description": percept.environment_description,
+            "user_profile": user_profile,
+            "recent_scene_history": history_str,
+        }
+        if spectrogram is not None:
+            scene_kwargs["spectrogram"] = spectrogram
+
+        scene_result = self.reason_scene(**scene_kwargs)
 
         # === Phase 2: Router 決定要不要跑矛盾解決 ===
         routing = self.scene_router(
@@ -1172,15 +1459,38 @@ class AcousticSemanticHarness(dspy.Module):
     4. Persistent Store — 偏好持久化、場景歷史、cached 結果
     """
 
+    # ★ Phase 5: LM 多模態能力資料庫（用於自動偵測）
+    AUDIO_CAPABLE_LMS = {
+        "gpt-4o-audio-preview", "gpt-4o-mini-audio-preview",
+        "gemini-2.0-flash", "gemini-2.5-pro", "gemini-3-pro",
+        "gemini-2.0-flash-exp",
+    }
+    VISION_CAPABLE_LMS = {
+        "gpt-4o", "gpt-4o-mini", "gpt-4o-audio-preview",
+        "gpt-4o-mini-audio-preview",
+        "gemini-2.0-flash", "gemini-2.5-pro", "gemini-3-pro",
+        "gemini-2.0-flash-exp",
+        "claude-3-5-sonnet", "claude-3-opus", "claude-4-sonnet",
+        "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-latest",
+        "claude-sonnet-4-20250514",
+    }
+
     def __init__(self,
                  fast_lm=None,    # 第四層用的小模型（低延遲）
                  strong_lm=None,  # 第五、六層用的大模型（強推理）
+                 enable_multimodal: bool = True,  # ★ Phase 3: 多模態開關
                  ):
         super().__init__()
 
         # === Semantic Scheduler: 不同層用不同模型 ===
         self.fast_lm = fast_lm
         self.strong_lm = strong_lm
+        self.enable_multimodal = enable_multimodal
+
+        # ★ Phase 5: 自動偵測 LM 多模態能力
+        self._fast_lm_supports_audio = self._check_lm_capability(fast_lm, 'audio')
+        self._fast_lm_supports_vision = self._check_lm_capability(fast_lm, 'vision')
+        self._strong_lm_supports_vision = self._check_lm_capability(strong_lm, 'vision')
 
         # === Semantic Modules（全部是 GEPA 可優化的） ===
         # 第四層 Composite（含 aggregate_router）
@@ -1213,6 +1523,26 @@ class AcousticSemanticHarness(dspy.Module):
         self._last_strategy_conf: float = 0.5
         self._frames_since_full: int = 0
         self._last_signal_energy: float = 0.0
+
+    @classmethod
+    def _check_lm_capability(cls, lm, capability: str) -> bool:
+        """
+        ★ Phase 5: 偵測 LM 是否支援音訊/視覺輸入。
+        透過 model name 比對已知的能力資料庫。
+        """
+        if lm is None:
+            return False
+        try:
+            model_name = str(getattr(lm, 'model', ''))
+            # 移除 provider prefix（如 "openai/" → ""）
+            short_name = model_name.split('/')[-1] if '/' in model_name else model_name
+            if capability == 'audio':
+                return any(k in short_name for k in cls.AUDIO_CAPABLE_LMS)
+            elif capability == 'vision':
+                return any(k in short_name for k in cls.VISION_CAPABLE_LMS)
+        except Exception:
+            pass
+        return False
 
     def _estimate_signal_change(self, raw_signal: RawSignal) -> float:
         """估算信號相比上一幀的變化量 [0,1]"""
@@ -1287,13 +1617,33 @@ class AcousticSemanticHarness(dspy.Module):
         # ═══ 第三層：特徵提取（確定性）═══
         features = comp_extract_full_features(raw_signal)
 
-        # ═══ 第四層：感知描述（LLM — 用小模型）═══
+        # ═══ Phase 2 + 5: 多模態資料生成（成本感知）═══
+        # ★ 根據 execution_depth 決定多模態預算：
+        #   fast → 不生成（已在上面 return）
+        #   medium → 只生成頻譜圖（Image，便宜）
+        #   full → 頻譜圖 + 音訊（Audio，貴）
+        audio_clip = None
+        spectrogram_img = None
+
+        if self.enable_multimodal:
+            # medium + full 都生成頻譜圖
+            if self._fast_lm_supports_vision or self._strong_lm_supports_vision:
+                spectrogram_img = generate_spectrogram_image(
+                    raw_signal, title=f"Frame (SNR≈{features.snr_db}dB)"
+                )
+            # 只有 full 才生成音訊（Phase 5 成本控制）
+            if depth == "full" and self._fast_lm_supports_audio:
+                audio_clip = raw_signal_to_audio(raw_signal)
+
+        # ═══ 第四層：感知描述（LLM — 用小模型 + 多模態）═══
         fast_ctx = dspy.context(lm=self.fast_lm) if self.fast_lm else nullcontext()
         try:
             with fast_ctx:
                 percept = self.perceptual_desc(
                     acoustic_features=features,
-                    user_context=user_profile
+                    user_context=user_profile,
+                    audio_clip=audio_clip,        # ★ Phase 3
+                    spectrogram=spectrogram_img,   # ★ Phase 3
                 )
         except Exception as e:
             percept = dspy.Prediction(
@@ -1303,14 +1653,17 @@ class AcousticSemanticHarness(dspy.Module):
                 confidence=0.3
             )
 
-        # ═══ 第五層：場景理解（LLM — 用大模型）═══
+        # ═══ 第五層：場景理解（LLM — 用大模型 + 頻譜圖）═══
         strong_ctx = dspy.context(lm=self.strong_lm) if self.strong_lm else nullcontext()
+        # ★ Phase 3: L5 只用頻譜圖（不傳音訊，省成本）
+        l5_spectrogram = spectrogram_img if self._strong_lm_supports_vision else None
         try:
             with strong_ctx:
                 scene = self.scene_understanding(
                     percept=percept,
                     user_profile=user_profile,
-                    recent_scenes=self.scene_history
+                    recent_scenes=self.scene_history,
+                    spectrogram=l5_spectrogram,  # ★ Phase 3
                 )
         except Exception as e:
             scene = dspy.Prediction(
@@ -1850,18 +2203,24 @@ def create_training_examples():
 
 class GEPATrainableHarness(dspy.Module):
     """
-    ★ GEPA 訓練用 Wrapper ★
+    ★ GEPA 訓練用 Wrapper（v0.3 多模態版）★
 
     橋接 training examples 的 input fields（scenario, snr_db, ...）
     和 AcousticSemanticHarness.forward() 的參數。
 
     GEPA 呼叫 forward(example_inputs) → 這個 wrapper 做轉換 → 呼叫真正的 Harness。
+
+    ★ v0.3: enable_multimodal 控制是否在 GEPA 訓練時使用多模態。
+      注意：GEPA + dspy.Image 有已知 memory leak（Issue #8848），
+      若記憶體不足可設為 False。
     """
-    def __init__(self, fast_lm=None, strong_lm=None):
+    def __init__(self, fast_lm=None, strong_lm=None,
+                 enable_multimodal: bool = True):
         super().__init__()
         self.harness = AcousticSemanticHarness(
             fast_lm=fast_lm,
-            strong_lm=strong_lm
+            strong_lm=strong_lm,
+            enable_multimodal=enable_multimodal,
         )
 
     def forward(self, scenario: str = "", snr_db: float = 10.0,
@@ -1930,8 +2289,21 @@ def compile_with_gepa():
         print(f"    - {name}")
     print("=" * 70)
 
+    # ★ Phase 4: 嘗試載入 MultiModalInstructionProposer
+    #   若有多模態 Signature（dspy.Audio/dspy.Image），GEPA 的反思迴圈
+    #   可以同時看到音訊/圖片 + 錯誤 feedback，更精準地改進 prompt。
+    instruction_proposer = None
+    try:
+        from dspy.teleprompt.gepa.instruction_proposal import (
+            MultiModalInstructionProposer,
+        )
+        instruction_proposer = MultiModalInstructionProposer()
+        print("  ★ Phase 4: MultiModalInstructionProposer 已啟用")
+    except ImportError:
+        print("  ★ Phase 4: MultiModalInstructionProposer 不可用，使用預設 proposer")
+
     # ★ GEPA 編譯 — 限制預算在 ~5-10 分鐘
-    optimizer = dspy.GEPA(
+    gepa_kwargs = dict(
         metric=create_acoustic_feedback_metric,
         max_metric_calls=100,
         num_threads=2,
@@ -1940,6 +2312,10 @@ def compile_with_gepa():
         reflection_minibatch_size=3,
         warn_on_score_mismatch=False,
     )
+    if instruction_proposer is not None:
+        gepa_kwargs["instruction_proposer"] = instruction_proposer
+
+    optimizer = dspy.GEPA(**gepa_kwargs)
 
     optimized = optimizer.compile(
         trainable,
@@ -1993,8 +2369,8 @@ def compile_with_gepa():
 
 ARCHITECTURE_MAP = """
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║                    ACOUSTIC SEMANTIC IR (ASIR) v0.2                     ║
-║      DSPy + GEPA + Method A (Learnable Routing) Architecture           ║
+║                    ACOUSTIC SEMANTIC IR (ASIR) v0.3                     ║
+║   DSPy + GEPA + Method A (Routing) + Multimodal (Audio/Image)          ║
 ╠═══════════════════════════════════════════════════════════════════════════╣
 ║                                                                         ║
 ║  ★ Pipeline Router (PipelineRoutingSig)                                ║
@@ -2035,11 +2411,11 @@ ARCHITECTURE_MAP = """
 ║  │ [COMP] SceneWithHistory     │                        │              ║
 ║  └──────────┬──────────────────┘                        │              ║
 ║             │                                            │              ║
-║  Layer 4: Perceptual Description                        │              ║
+║  Layer 4: Perceptual Description  ★ +Audio +Image       │              ║
 ║  ┌──────────┴──────────────────────────────────────┐    │              ║
-║  │ [PRIM] DescribeNoiseSig    → fast_lm (小模型)  │    │              ║
-║  │ [PRIM] DescribeSpeechSig   → fast_lm           │    │              ║
-║  │ [PRIM] DescribeEnvSig      → fast_lm           │    │              ║
+║  │ [PRIM] DescribeNoiseSig    → fast_lm +🎵+🖼️    │    │              ║
+║  │ [PRIM] DescribeSpeechSig   → fast_lm +🎵+🖼️    │    │              ║
+║  │ [PRIM] DescribeEnvSig      → fast_lm +🎵+🖼️    │    │              ║
 ║  │     ↓ 三個結果                                  │    │              ║
 ║  │ [ROUTING] aggregate_router → 動態權重 + 信心度  │    │              ║
 ║  │ [COMP] FullPerceptualDescription                │    │              ║
@@ -2075,14 +2451,23 @@ ARCHITECTURE_MAP = """
 ║  ├─ Semantic Scheduler: pipeline_router + fast_lm/strong_lm           ║
 ║  └─ Persistent Store:   scene_history, cached results, preferences     ║
 ║                                                                         ║
-║  GEPA Optimizer (v0.2):                                                ║
+║  GEPA Optimizer (v0.3):                                                ║
 ║  ├─ Optimizable targets:                                               ║
 ║  │   ├─ 9 original PRIMs  (can be frozen in Phase 1)                  ║
 ║  │   └─ 5 new ROUTERs     (★ Method A learnable routing)             ║
 ║  ├─ Feedback metric:   create_acoustic_feedback_metric()               ║
 ║  │   └─ Encodes:  物理約束 + 聽力學原則 + routing 合理性              ║
 ║  ├─ Per-predictor feedback: PRIM + ROUTER 各有獨立回饋                ║
-║  └─ Reflection:  用 strong_lm 反思失敗案例，自動改進 prompt           ║
+║  ├─ Reflection:  用 strong_lm 反思失敗案例，自動改進 prompt           ║
+║  └─ ★ Phase 4: MultiModalInstructionProposer (v0.3)                  ║
+║       反思 LM 同時看到 Audio/Image + 錯誤分析 → 更精準改進 prompt     ║
+║                                                                         ║
+║  Multimodal Pipeline (v0.3):                                           ║
+║  ├─ Phase 1: raw_signal_to_audio()  → dspy.Audio (原始音訊)           ║
+║  ├─ Phase 2: generate_spectrogram() → dspy.Image (頻譜圖)             ║
+║  ├─ Phase 3: L4/L5 Signatures 加入 Optional[Audio/Image] 輸入        ║
+║  ├─ Phase 4: GEPA + MultiModalInstructionProposer                     ║
+║  └─ Phase 5: 成本感知路由 (fast=text, medium=image, full=audio+image) ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 """
 
