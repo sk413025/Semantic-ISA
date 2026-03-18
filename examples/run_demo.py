@@ -125,10 +125,44 @@ def _print_result(result):
     print(f"  Filter coeffs (first 5): {result.dsp_params.filter_coeffs[:5]}")
 
 
+def _result_to_trace(result, label):
+    """把 harness result 序列化成可存 MLflow 的 dict。"""
+    return {
+        "scenario": label,
+        "L3_features": {
+            "snr_db": result.features.snr_db,
+            "energy_db": result.features.energy_db,
+            "n_active_sources": result.features.n_active_sources,
+        },
+        "L4_percept": {
+            "noise": str(result.percept.noise_description)[:300],
+            "speech": str(result.percept.speech_description)[:300],
+            "environment": str(result.percept.environment_description)[:300],
+            "confidence": str(result.percept.confidence),
+        },
+        "L5_scene": {
+            "situation": str(result.scene.situation)[:500],
+            "confidence": str(result.scene.confidence),
+        },
+        "L6_strategy": {
+            "beam_azimuth": str(result.strategy.target_azimuth_deg),
+            "beam_width": str(result.strategy.beam_width_deg),
+            "nr_aggressiveness": str(result.strategy.nr_aggressiveness),
+            "compression": str(result.strategy.compression_ratio),
+        },
+        "dsp_params": {
+            "beam_weights": result.dsp_params.beam_weights[:5],
+            "compression": result.dsp_params.compression_ratio,
+        },
+        "preferences": getattr(result, "current_preferences", None),
+    }
+
+
 def demo_full_pipeline():
     """
     展示完整七層管線（需要 OpenAI API key）
     場景：菜市場跟攤販對話 → 使用者抱怨「太悶了」→ 偏好更新 → 策略調整
+    結果記錄到 MLflow（mlflow ui 查看推理 trace）。
     """
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
@@ -136,6 +170,7 @@ def demo_full_pipeline():
         return
 
     import dspy
+    import mlflow
 
     print("\n" + "=" * 70)
     print("DEMO: 完整七層管線（含 LLM 層）")
@@ -160,36 +195,48 @@ def demo_full_pipeline():
         fast_lm=task_lm, strong_lm=strong_lm, enable_multimodal=True,
     )
 
-    # --- 第一次：菜市場，無使用者動作 ---
-    print("\n>>> 場景 1: 菜市場跟攤販對話（自動處理）")
-    result = harness(
-        raw_signal=signal,
-        user_action="none",
-        user_profile=USER_PROFILE,
-        audiogram_json=AUDIOGRAM,
-    )
-    _print_result(result)
+    mlflow.set_experiment("asir-demo")
+    with mlflow.start_run(run_name="demo_market_scenario"):
+        # --- 第一次：菜市場，無使用者動作 ---
+        print("\n>>> 場景 1: 菜市場跟攤販對話（自動處理）")
+        result = harness(
+            raw_signal=signal,
+            user_action="none",
+            user_profile=USER_PROFILE,
+            audiogram_json=AUDIOGRAM,
+        )
+        _print_result(result)
 
-    # --- 第二次：使用者抱怨「太悶了」→ L7 偏好更新 ---
-    print("\n" + "-" * 70)
-    print(">>> 場景 2: 同場景，使用者抱怨「太悶了」→ 更新偏好")
-    result2 = harness(
-        raw_signal=signal,
-        user_action="太悶了",
-        user_profile=USER_PROFILE,
-        audiogram_json=AUDIOGRAM,
-    )
-    _print_result(result2)
+        # --- 第二次：使用者抱怨「太悶了」→ L7 偏好更新 ---
+        print("\n" + "-" * 70)
+        print(">>> 場景 2: 同場景，使用者抱怨「太悶了」→ 更新偏好")
+        result2 = harness(
+            raw_signal=signal,
+            user_action="太悶了",
+            user_profile=USER_PROFILE,
+            audiogram_json=AUDIOGRAM,
+        )
+        _print_result(result2)
 
-    print(f"\n[Layer 7] Preferences after feedback:")
-    print(f"  {json.dumps(result2.current_preferences, ensure_ascii=False, indent=2)}")
+        print(f"\n[Layer 7] Preferences after feedback:")
+        print(f"  {json.dumps(result2.current_preferences, ensure_ascii=False, indent=2)}")
 
-    print(f"\n[Scene History]:")
-    for i, s in enumerate(result2.scene_history):
-        print(f"  {i+1}. {s[:100]}")
+        print(f"\n[Scene History]:")
+        for i, s in enumerate(result2.scene_history):
+            print(f"  {i+1}. {s[:100]}")
+
+        # Log trace to MLflow
+        mlflow.log_dict({
+            "wet_market_vendor": _result_to_trace(result, "wet_market_vendor"),
+            "market_too_muffled": _result_to_trace(result2, "market_too_muffled"),
+        }, "demo_trace.json")
+        mlflow.log_metric("scene1_nr", float(result.strategy.nr_aggressiveness))
+        mlflow.log_metric("scene2_nr", float(result2.strategy.nr_aggressiveness))
 
     print("\n" + "=" * 70)
     print("完整七層管線執行完成！")
+    print("推理 trace 已記錄到 MLflow (experiment: asir-demo)")
+    print("查看：mlflow ui → asir-demo → demo_market_scenario → Artifacts → demo_trace.json")
     print("=" * 70)
 
 
