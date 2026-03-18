@@ -64,8 +64,11 @@ asir/
 ├── composites/     # dspy.Module orchestrators combining primitives+routing
 ├── multimodal/     # dspy.Audio / dspy.Image generation (Phase 1-2)
 ├── gepa/           # GEPA metric, training examples, compiler
+├── eval/           # Evaluation framework: examples, metrics, runner
 ├── harness.py      # Top-level AcousticSemanticHarness (the "OS")
 └── architecture.py # ASCII architecture diagram
+tests/
+└── test_deterministic.py  # L1-L3 pytest (17 tests, no API key)
 examples/
 ├── run_demo.py     # Entry point: deterministic demo / full pipeline / GEPA
 └── audio/          # Test WAV files for agent testing (audio1.wav, audio2.wav)
@@ -86,6 +89,24 @@ Audiology: **Audiogram** = 各頻率聽力閾值圖 (dB HL)；**NAL-NL2** = 根�
 Signal Processing: **Beamforming** = 多麥克風空間濾波（`beam_weights`）；**Spectral Subtraction** = 頻譜減噪；**Noise Mask** = 逐頻率 0-1 增益遮罩；**SNR** = 訊噪比 (dB)；**RT60** = 迴響衰減 60dB 所需秒數；**MFCC** = 模仿人耳的頻率特徵；**Compression** = 動態範圍壓縮（`compression_ratio`）
 
 Full glossary: see `README.md` § 領域術語 Glossary (collapsible section)
+
+## Evaluation
+
+```bash
+# L1-L3 deterministic tests (no API key)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
+
+# L1-L3 inline eval (no API key)
+PYTHONUTF8=1 python -X utf8 -m asir.eval
+
+# Full L1-L7 eval (needs OPENAI_API_KEY in .env)
+PYTHONUTF8=1 python -X utf8 -m asir.eval --full
+```
+
+- `tests/test_deterministic.py` — 17 pytest tests for L1-L3 (synthetic signals, numpy)
+- `asir/eval/examples.py` — 8 evaluation scenarios (separate from 5 training scenarios)
+- `asir/eval/metrics.py` — per-layer constraint checks (L4-L7), not exact match
+- `asir/eval/run.py` — runner, outputs per-layer scores + `eval_results.json`
 
 ## Dependencies
 

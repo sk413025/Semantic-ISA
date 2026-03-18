@@ -37,12 +37,20 @@ audio into optimized DSP parameters through LLM-powered reasoning.
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 ```
 
-## Testing Changes
+## Testing & Evaluation
 
-After modifying any file, verify the deterministic layers still work:
+After modifying any file, run the deterministic tests first:
 ```bash
-PYTHONUTF8=1 python -X utf8 -c "from asir.primitives import comp_extract_full_features, prim_sample_audio; f = comp_extract_full_features(prim_sample_audio()); print(f'SNR={f.snr_db}, RT60={f.rt60_s}')"
+# Quick smoke test (no API key)
+PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
+
+# Full eval including L4-L7 semantic layers (needs OPENAI_API_KEY in .env)
+PYTHONUTF8=1 python -X utf8 -m asir.eval --full
 ```
+
+- `tests/test_deterministic.py` — 17 pytest tests for L1-L3
+- `asir/eval/` — 8 eval scenarios + per-layer constraint metrics + runner
+- Eval output: per-layer scores + `eval_results.json`
 
 ## Test Audio Files
 
