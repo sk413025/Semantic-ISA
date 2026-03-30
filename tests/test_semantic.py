@@ -1,65 +1,72 @@
 """
-L4-L7 Semantic Layer Tests — 語意推理品質驗證
+L4-L7 semantic layer tests for reasoning quality.
 
-需要 OPENAI_API_KEY，沒有 API key 會自動 skip。
-用 asir/eval/ 的場景定義、metrics 和 composites 跑 10 個場景。
-結果記錄到 MLflow (experiment: asir-eval-pytest)。
+These tests require `OPENAI_API_KEY`; if the key is missing the module is
+skipped automatically.
 
-跑法:
+The suite runs all 10 scenarios using the scenario definitions, metrics, and
+composites from `asir/eval/`, then logs summary artifacts to MLflow
+(`experiment: asir-eval-pytest`).
+
+Run with:
   PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 """
-import os
+
 import json
+import os
+
 import pytest
 
 from asir.eval.examples import create_eval_examples
-from asir.eval.run import build_features, _build_trace
 from asir.eval.metrics import (
-    check_l4_perceptual, check_l5_scene,
-    check_l6_strategy, check_dsp_output, check_l7_routing,
+    check_dsp_output,
+    check_l4_perceptual,
+    check_l5_scene,
+    check_l6_strategy,
+    check_l7_routing,
     compute_score,
 )
+from asir.eval.run import _build_trace, build_features
 
 EVAL_EXAMPLES = create_eval_examples()
 SCENARIO_IDS = [e.scenario for e in EVAL_EXAMPLES]
 
 
 def _load_env():
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    k, v = line.split('=', 1)
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
                     os.environ.setdefault(k.strip(), v.strip())
 
 
 _load_env()
 
-# Skip entire module if no API key
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"),
     reason="OPENAI_API_KEY not set — skip semantic tests",
 )
-
-
-# ===== Module-scoped fixture: run all scenarios once =====
 
 _cached_results = {}
 
 
 @pytest.fixture(scope="module")
 def all_results():
-    """Run L4-L7 pipeline for all 10 scenarios once, cache results."""
+    """Run the semantic pipeline once for all scenarios and cache results."""
     if _cached_results:
         return _cached_results
 
     import dspy
     import mlflow
+
     from asir.composites import (
-        FullPerceptualDescription, SceneWithHistory,
-        GenerateFullStrategy, comp_strategy_to_dsp_params,
+        FullPerceptualDescription,
+        GenerateFullStrategy,
+        SceneWithHistory,
+        comp_strategy_to_dsp_params,
     )
     from asir.routing.pipeline import PipelineRoutingSig
 
@@ -72,8 +79,6 @@ def all_results():
     scene_understanding = SceneWithHistory()
     strategy_gen = GenerateFullStrategy()
     pipeline_router = dspy.ChainOfThought(PipelineRoutingSig)
-
-    scenario_traces = {}
 
     for ex in EVAL_EXAMPLES:
         scenario = ex.scenario
@@ -93,10 +98,11 @@ def all_results():
             )
 
         prefs = {"noise_tolerance": "medium", "processing_preference": "natural"}
-        user_action = str(getattr(ex, 'user_action', 'none'))
+        user_action = str(getattr(ex, "user_action", "none"))
 
         if user_action != "none":
             from asir.primitives.intent import UpdatePreferencesSig
+
             with dspy.context(lm=strong_lm):
                 pref_update = dspy.ChainOfThought(UpdatePreferencesSig)(
                     current_preferences=json.dumps(prefs, ensure_ascii=False),
@@ -151,7 +157,6 @@ def all_results():
             "trace": _build_trace(pred),
         }
 
-    # Log to MLflow
     mlflow.set_experiment("asir-eval-pytest")
     with mlflow.start_run(run_name="pytest_semantic"):
         all_failures = []
@@ -161,106 +166,116 @@ def all_results():
                 mlflow.log_metric(f"{scenario}_{layer}", score)
                 for check_name, (passed, detail) in checks.items():
                     if not passed:
-                        all_failures.append({
-                            "scenario": scenario, "layer": layer,
-                            "check": check_name, "detail": detail,
-                        })
+                        all_failures.append(
+                            {
+                                "scenario": scenario,
+                                "layer": layer,
+                                "check": check_name,
+                                "detail": detail,
+                            }
+                        )
         mlflow.log_metric("num_failures", len(all_failures))
-        mlflow.log_dict({
-            "scenarios": {
-                s: {"trace": d["trace"], "checks": {
-                    layer: {name: {"passed": p, "detail": det}
-                            for name, (p, det) in checks.items()}
-                    for layer, checks in d["checks"].items()
-                }}
-                for s, d in _cached_results.items()
+        mlflow.log_dict(
+            {
+                "scenarios": {
+                    s: {
+                        "trace": d["trace"],
+                        "checks": {
+                            layer: {
+                                name: {"passed": p, "detail": det}
+                                for name, (p, det) in checks.items()
+                            }
+                            for layer, checks in d["checks"].items()
+                        },
+                    }
+                    for s, d in _cached_results.items()
+                },
+                "failures": all_failures,
             },
-            "failures": all_failures,
-        }, "pytest_eval_results.json")
+            "pytest_eval_results.json",
+        )
 
     return _cached_results
 
 
-# ===== L4 Perceptual Description =====
-
 class TestL4Perceptual:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)
     def test_l4_checks_pass(self, all_results, scenario):
-        """L4 噪音/語音/環境描述是否跟聲學特徵一致。"""
+        """Verify L4 descriptions remain consistent with acoustic features."""
         checks = all_results[scenario]["checks"]["L4"]
         failed = [(name, detail) for name, (passed, detail) in checks.items() if not passed]
-        assert not failed, \
-            f"L4 failures for {scenario}: " + "; ".join(f"{n}: {d}" for n, d in failed)
+        assert not failed, (
+            f"L4 failures for {scenario}: "
+            + "; ".join(f"{n}: {d}" for n, d in failed)
+        )
 
-
-# ===== L5 Scene Understanding =====
 
 class TestL5Scene:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)
     def test_l5_checks_pass(self, all_results, scenario):
-        """L5 場景理解是否反映噪音/迴響/聲源數。"""
+        """Verify L5 scene understanding reflects noise, reverb, and sources."""
         checks = all_results[scenario]["checks"]["L5"]
         failed = [(name, detail) for name, (passed, detail) in checks.items() if not passed]
-        assert not failed, \
-            f"L5 failures for {scenario}: " + "; ".join(f"{n}: {d}" for n, d in failed)
+        assert not failed, (
+            f"L5 failures for {scenario}: "
+            + "; ".join(f"{n}: {d}" for n, d in failed)
+        )
 
-
-# ===== L6 Strategy =====
 
 class TestL6Strategy:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)
     def test_l6_checks_pass(self, all_results, scenario):
-        """L6 策略推理是否合理（NR 強度、推理長度）。"""
+        """Verify L6 strategy reasoning stays coherent with scene demands."""
         checks = all_results[scenario]["checks"]["L6"]
         failed = [(name, detail) for name, (passed, detail) in checks.items() if not passed]
-        assert not failed, \
-            f"L6 failures for {scenario}: " + "; ".join(f"{n}: {d}" for n, d in failed)
+        assert not failed, (
+            f"L6 failures for {scenario}: "
+            + "; ".join(f"{n}: {d}" for n, d in failed)
+        )
 
-
-# ===== DSP Output =====
 
 class TestDSPOutput:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)
     def test_dsp_checks_pass(self, all_results, scenario):
-        """DSP 參數是否符合物理約束（增益、波束、降噪、壓縮）。"""
+        """Verify DSP parameters obey physical and hearing-aid constraints."""
         checks = all_results[scenario]["checks"]["DSP"]
         failed = [(name, detail) for name, (passed, detail) in checks.items() if not passed]
-        assert not failed, \
-            f"DSP failures for {scenario}: " + "; ".join(f"{n}: {d}" for n, d in failed)
+        assert not failed, (
+            f"DSP failures for {scenario}: "
+            + "; ".join(f"{n}: {d}" for n, d in failed)
+        )
 
-
-# ===== L7 Routing & Preferences =====
 
 class TestL7Routing:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)
     def test_l7_checks_pass(self, all_results, scenario):
-        """L7 路由和偏好更新是否正確。"""
+        """Verify routing and preference updates behave as expected."""
         checks = all_results[scenario]["checks"]["L7"]
         failed = [(name, detail) for name, (passed, detail) in checks.items() if not passed]
-        assert not failed, \
-            f"L7 failures for {scenario}: " + "; ".join(f"{n}: {d}" for n, d in failed)
+        assert not failed, (
+            f"L7 failures for {scenario}: "
+            + "; ".join(f"{n}: {d}" for n, d in failed)
+        )
 
-
-# ===== Cross-scenario: E9 vs E10 比較 =====
 
 class TestMarketScenarioPair:
-    """菜市場旗艦場景：E9 (自動) vs E10 (太悶了) 的差異。"""
+    """Compare the two flagship market scenarios side by side."""
 
     def test_e10_nr_differs_from_e9(self, all_results):
-        """太悶了回饋應導致 E10 的 NR 不同於 E9。"""
+        """'Too muffled' feedback should change E10 NR relative to E9."""
         e9 = all_results["wet_market_vendor"]["trace"].get("L6", {})
         e10 = all_results["market_too_muffled"]["trace"].get("L6", {})
         nr9 = e9.get("nr_aggressiveness")
         nr10 = e10.get("nr_aggressiveness")
         if nr9 is not None and nr10 is not None:
-            assert nr9 != nr10, \
-                f"E9 NR={nr9} should differ from E10 NR={nr10} (user said 太悶了)"
+            assert nr9 != nr10, (
+                f"E9 NR={nr9} should differ from E10 NR={nr10} "
+                "(user reported the output was too muffled)"
+            )
 
     def test_e10_preferences_updated(self, all_results):
-        """E10 (太悶了) 的偏好應有更新。"""
+        """The E10 feedback case should update user preferences."""
         prefs = all_results["market_too_muffled"]["pred"].current_preferences
         default = {"noise_tolerance": "medium", "processing_preference": "natural"}
-        changed = any(
-            prefs.get(k) != v for k, v in default.items()
-        ) or len(prefs) > len(default)
-        assert changed, f"E10 prefs should differ from defaults: {prefs}"
+        changed = any(prefs.get(k) != v for k, v in default.items()) or len(prefs) > len(default)
+        assert changed, f"E10 preferences should differ from defaults: {prefs}"

@@ -1,158 +1,158 @@
-{
-  "feature_extraction": [
-    {
-      "scenario": "restaurant_dinner",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 3.0,
-      "snr_actual": 8.4,
-      "energy_db": 72.0
-    },
-    {
-      "scenario": "church_ceremony",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 12.0,
-      "snr_actual": 11.1,
-      "energy_db": 60.0
-    },
-    {
-      "scenario": "quiet_library",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 30.0,
-      "snr_actual": 30.1,
-      "energy_db": 40.0
-    },
-    {
-      "scenario": "street_phone_call",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": -2.0,
-      "snr_actual": 15.2,
-      "energy_db": 68.8
-    },
-    {
-      "scenario": "supermarket_shopping",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 8.0,
-      "snr_actual": 10.1,
-      "energy_db": 68.0
-    },
-    {
-      "scenario": "car_conversation",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 6.0,
-      "snr_actual": 10.8,
-      "energy_db": 70.0
-    },
-    {
-      "scenario": "noisy_cafe_complaint",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 2.0,
-      "snr_actual": 8.0,
-      "energy_db": 75.0
-    },
-    {
-      "scenario": "severe_loss_quiet_home",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 25.0,
-      "snr_actual": 17.3,
-      "energy_db": 50.0
-    },
-    {
-      "scenario": "wet_market_vendor",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 0.0,
-      "snr_actual": 5.7,
-      "energy_db": 78.0
-    },
-    {
-      "scenario": "market_too_muffled",
-      "status": "PASS",
-      "score": 1.0,
-      "snr_target": 0.0,
-      "snr_actual": 6.1,
-      "energy_db": 78.0
-    }
-  ],
-  "end_to_end_failures": [
-    {
-      "scenario": "restaurant_dinner",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=3.0dB → noise desc should mention loudness. Got: [{\"type\": \"ambient noise\", \"direction\": \"varied"
-    },
-    {
-      "scenario": "church_ceremony",
-      "layer": "L5",
-      "check": "reverb_consistent",
-      "detail": "RT60=2.5s → scene should mention reverb. Got: 使用者身處於一個大型的社交聚會中，周遭有多方的交流聲與活動聲音，整體環境非常嘈雜且回響，這使得人們之間的對話"
-    },
-    {
-      "scenario": "quiet_library",
-      "layer": "DSP",
-      "check": "beam_appropriate",
-      "detail": "Expected wide beam (>= 45°) but width=30°"
-    },
-    {
-      "scenario": "street_phone_call",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=-2.0dB → noise desc should mention loudness. Got: {\"noise_sources\":[{\"type\":\"impulsive\",\"directi"
-    },
-    {
-      "scenario": "street_phone_call",
-      "layer": "L7",
-      "check": "preference_stable",
-      "detail": "User action='focus_front' is a command, not feedback. Prefs should be unchanged. Changed: True"
-    },
-    {
-      "scenario": "supermarket_shopping",
-      "layer": "L5",
-      "check": "reverb_consistent",
-      "detail": "RT60=1.0s → scene should mention reverb. Got: 使用者正在參加一個大型的社交聚會，環境中充滿了各種高頻和衝擊性的聲音，包括多方的對話、活動聲和周圍噪音。這樣"
-    },
-    {
-      "scenario": "supermarket_shopping",
-      "layer": "DSP",
-      "check": "beam_appropriate",
-      "detail": "Expected wide beam (>= 45°) but width=25°"
-    },
-    {
-      "scenario": "noisy_cafe_complaint",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=2.0dB → noise desc should mention loudness. Got: {\n    \"noise_sources\": [\n        {\n            "
-    },
-    {
-      "scenario": "noisy_cafe_complaint",
-      "layer": "L6",
-      "check": "nr_matches_scene",
-      "detail": "Noisy scene → NR agg=0.30, expected >= 0.4"
-    },
-    {
-      "scenario": "severe_loss_quiet_home",
-      "layer": "DSP",
-      "check": "beam_appropriate",
-      "detail": "Expected wide beam (>= 45°) but width=30°"
-    },
-    {
-      "scenario": "wet_market_vendor",
-      "layer": "L4",
-      "check": "noise_consistent",
-      "detail": "SNR=0.0dB → noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"amb"
-    },
-    {
-      "scenario": "wet_market_vendor",
-      "layer": "L6",
-      "check": "nr_matches_scene",
-      "detail": "Noisy scene → NR agg=0.30, expected >= 0.4"
-    }
-  ]
+﻿{
+    "feature_extraction":  [
+                               {
+                                   "scenario":  "restaurant_dinner",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  3.0,
+                                   "snr_actual":  8.4,
+                                   "energy_db":  72.0
+                               },
+                               {
+                                   "scenario":  "church_ceremony",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  12.0,
+                                   "snr_actual":  11.1,
+                                   "energy_db":  60.0
+                               },
+                               {
+                                   "scenario":  "quiet_library",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  30.0,
+                                   "snr_actual":  30.1,
+                                   "energy_db":  40.0
+                               },
+                               {
+                                   "scenario":  "street_phone_call",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  -2.0,
+                                   "snr_actual":  15.2,
+                                   "energy_db":  68.8
+                               },
+                               {
+                                   "scenario":  "supermarket_shopping",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  8.0,
+                                   "snr_actual":  10.1,
+                                   "energy_db":  68.0
+                               },
+                               {
+                                   "scenario":  "car_conversation",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  6.0,
+                                   "snr_actual":  10.8,
+                                   "energy_db":  70.0
+                               },
+                               {
+                                   "scenario":  "noisy_cafe_complaint",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  2.0,
+                                   "snr_actual":  8.0,
+                                   "energy_db":  75.0
+                               },
+                               {
+                                   "scenario":  "severe_loss_quiet_home",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  25.0,
+                                   "snr_actual":  17.3,
+                                   "energy_db":  50.0
+                               },
+                               {
+                                   "scenario":  "wet_market_vendor",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  0.0,
+                                   "snr_actual":  5.7,
+                                   "energy_db":  78.0
+                               },
+                               {
+                                   "scenario":  "market_too_muffled",
+                                   "status":  "PASS",
+                                   "score":  1.0,
+                                   "snr_target":  0.0,
+                                   "snr_actual":  6.1,
+                                   "energy_db":  78.0
+                               }
+                           ],
+    "end_to_end_failures":  [
+                                {
+                                    "scenario":  "restaurant_dinner",
+                                    "layer":  "L4",
+                                    "check":  "noise_consistent",
+                                    "detail":  "SNR=3.0dB â†’ noise desc should mention loudness. Got: [{\"type\": \"ambient noise\", \"direction\": \"varied"
+                                },
+                                {
+                                    "scenario":  "church_ceremony",
+                                    "layer":  "L5",
+                                    "check":  "reverb_consistent",
+                                    "detail":  "RT60=2.5s -\u003e scene should mention reverb. Got: The user appears to be in a large social gathering with multiple overlapping conversations and activity sounds. The overall environment is very noisy and reverberant, making person-to-person conversation difficult."
+                                },
+                                {
+                                    "scenario":  "quiet_library",
+                                    "layer":  "DSP",
+                                    "check":  "beam_appropriate",
+                                    "detail":  "Expected wide beam (\u003e= 45Â°) but width=30Â°"
+                                },
+                                {
+                                    "scenario":  "street_phone_call",
+                                    "layer":  "L4",
+                                    "check":  "noise_consistent",
+                                    "detail":  "SNR=-2.0dB â†’ noise desc should mention loudness. Got: {\"noise_sources\":[{\"type\":\"impulsive\",\"directi"
+                                },
+                                {
+                                    "scenario":  "street_phone_call",
+                                    "layer":  "L7",
+                                    "check":  "preference_stable",
+                                    "detail":  "User action=\u0027focus_front\u0027 is a command, not feedback. Prefs should be unchanged. Changed: True"
+                                },
+                                {
+                                    "scenario":  "supermarket_shopping",
+                                    "layer":  "L5",
+                                    "check":  "reverb_consistent",
+                                    "detail":  "RT60=1.0s -\u003e scene should mention reverb. Got: The user appears to be in a large social gathering filled with high-frequency and transient sounds, including multiple conversations, activity noise, and surrounding background noise. The environment feels busy and somewhat reverberant."
+                                },
+                                {
+                                    "scenario":  "supermarket_shopping",
+                                    "layer":  "DSP",
+                                    "check":  "beam_appropriate",
+                                    "detail":  "Expected wide beam (\u003e= 45Â°) but width=25Â°"
+                                },
+                                {
+                                    "scenario":  "noisy_cafe_complaint",
+                                    "layer":  "L4",
+                                    "check":  "noise_consistent",
+                                    "detail":  "SNR=2.0dB â†’ noise desc should mention loudness. Got: {\n    \"noise_sources\": [\n        {\n            "
+                                },
+                                {
+                                    "scenario":  "noisy_cafe_complaint",
+                                    "layer":  "L6",
+                                    "check":  "nr_matches_scene",
+                                    "detail":  "Noisy scene â†’ NR agg=0.30, expected \u003e= 0.4"
+                                },
+                                {
+                                    "scenario":  "severe_loss_quiet_home",
+                                    "layer":  "DSP",
+                                    "check":  "beam_appropriate",
+                                    "detail":  "Expected wide beam (\u003e= 45Â°) but width=30Â°"
+                                },
+                                {
+                                    "scenario":  "wet_market_vendor",
+                                    "layer":  "L4",
+                                    "check":  "noise_consistent",
+                                    "detail":  "SNR=0.0dB â†’ noise desc should mention loudness. Got: {\n  \"noise_sources\": [\n    {\n      \"type\": \"amb"
+                                },
+                                {
+                                    "scenario":  "wet_market_vendor",
+                                    "layer":  "L6",
+                                    "check":  "nr_matches_scene",
+                                    "detail":  "Noisy scene â†’ NR agg=0.30, expected \u003e= 0.4"
+                                }
+                            ]
 }

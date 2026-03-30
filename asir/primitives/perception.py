@@ -1,106 +1,104 @@
 from typing import Optional
+
 import dspy
 
 
-# --- [PRIM] describe_noise: 從數值翻譯成感知語義 ---
+# --- [PRIM] describe_noise: translate numeric features into perceptual semantics ---
 class DescribeNoiseSig(dspy.Signature):
     """
-    [PRIM] 第四層：噪音感知描述（多模態版 v0.3）
+    [PRIM] Layer 4: noise perceptual description (multimodal v0.3).
     BACKEND: LLM (multimodal-aware)
     RELIABILITY: source_identification_accuracy >= 0.80
 
-    將聲學特徵翻譯成人類可理解的噪音描述。
-    這是一個不可分解的語義原子操作——因為噪音的
-    類型、方向、時間模式之間有強耦合。
+    Translate acoustic features into human-readable noise descriptions. This is
+    an irreducible semantic operation because noise type, direction, and
+    temporal structure are tightly coupled.
 
-    ★ 多模態輸入（v0.3 新增）：
-      - audio_clip: 讓支援音訊的 LM 直接「聽」原始音訊
-      - spectrogram: 讓所有 vision LM「看到」頻譜結構
-      - 兩者都是 Optional：不可用時退回純文字模式
+    Multimodal inputs:
+    - audio_clip lets audio-capable models directly listen to the waveform.
+    - spectrogram lets vision-capable models inspect time-frequency structure.
+    - both are optional and fall back to text-only mode when unavailable.
     """
+
     acoustic_features: str = dspy.InputField(
-        desc="聲學特徵的文字描述，包含 SNR、頻譜特性、能量等"
+        desc="Text description of acoustic features, including SNR, spectral properties, and energy"
     )
     user_context: str = dspy.InputField(
-        desc="使用者上下文：年齡、聽力狀況、當前活動"
+        desc="User context such as age, hearing profile, and current activity"
     )
-    # ★ Phase 3: 多模態輸入
     audio_clip: Optional[dspy.Audio] = dspy.InputField(
-        desc="原始音訊片段（支援音訊的 LM 可直接聽取，不可用時為 None）",
-        default=None
+        desc="Raw audio clip. Audio-capable models can listen directly; otherwise this is None.",
+        default=None,
     )
     spectrogram: Optional[dspy.Image] = dspy.InputField(
-        desc="Mel 頻譜圖（所有 vision LM 可看到音訊結構，不可用時為 None）",
-        default=None
+        desc="Mel spectrogram image so vision models can inspect audio structure; otherwise None.",
+        default=None,
     )
 
     noise_sources_json: str = dspy.OutputField(
-        desc="JSON 格式的噪音源列表，每個包含 type/direction/temporal/severity。"
-             "severity 必須反映 SNR：SNR<5dB→'high'或'severe'，"
-             "5-15dB→'moderate'，>15dB→'low'或'minimal'"
+        desc="JSON list of noise sources, each with type / direction / temporal / severity. "
+        "Severity must reflect SNR: <5 dB -> high or severe; 5-15 dB -> moderate; >15 dB -> low or minimal."
     )
-    confidence: float = dspy.OutputField(
-        desc="噪音描述的信心度 [0,1]"
-    )
+    confidence: float = dspy.OutputField(desc="Confidence of the noise description [0,1]")
 
 
-# --- [PRIM] describe_speech: 語音感知描述 ---
+# --- [PRIM] describe_speech: speech perceptual description ---
 class DescribeSpeechSig(dspy.Signature):
     """
-    [PRIM] 第四層：語音感知描述（多模態版 v0.3）
+    [PRIM] Layer 4: speech perceptual description (multimodal v0.3).
     BACKEND: LLM (multimodal-aware)
     RELIABILITY: n_speakers_accuracy >= 0.85 (for 1-4 speakers)
     FAILURE_MODE: >4 speakers -> n_speakers = -1 (meaning "many")
 
-    ★ 語音分析是多模態收益最大的 PRIM——
-      直接聽音訊可以判斷說話者數量、方向、可懂度。
+    Speech analysis benefits strongly from multimodal input because direct audio
+    can improve speaker-count, direction, and intelligibility judgments.
     """
+
     acoustic_features: str = dspy.InputField(
-        desc="聲學特徵，特別關注基頻、調變模式、能量包絡"
+        desc="Acoustic features with emphasis on pitch, modulation patterns, and energy envelope"
     )
-    # ★ Phase 3: 多模態輸入
     audio_clip: Optional[dspy.Audio] = dspy.InputField(
-        desc="原始音訊片段（直接聽取可更準確判斷說話者數量和可懂度）",
-        default=None
+        desc="Raw audio clip. Listening directly can improve speaker-count and intelligibility estimates.",
+        default=None,
     )
     spectrogram: Optional[dspy.Image] = dspy.InputField(
-        desc="頻譜圖（可看到語音的諧波結構和時間模式）",
-        default=None
+        desc="Spectrogram image that reveals formant structure and temporal speech patterns.",
+        default=None,
     )
 
-    n_speakers: int = dspy.OutputField(desc="估計說話者數量，>4 時返回 -1")
-    target_direction: str = dspy.OutputField(desc="目標說話者方向描述")
-    target_distance: str = dspy.OutputField(desc="估計距離: near/medium/far")
+    n_speakers: int = dspy.OutputField(desc="Estimated number of speakers; use -1 for more than four")
+    target_direction: str = dspy.OutputField(desc="Description of the target speaker direction")
+    target_distance: str = dspy.OutputField(desc="Estimated distance: near / medium / far")
     intelligibility: str = dspy.OutputField(
-        desc="可懂度: clear/slightly_masked/heavily_masked/inaudible"
+        desc="Intelligibility: clear / slightly_masked / heavily_masked / inaudible"
     )
-    confidence: float = dspy.OutputField(desc="信心度 [0,1]")
+    confidence: float = dspy.OutputField(desc="Confidence [0,1]")
 
 
-# --- [PRIM] describe_environment: 環境感知描述 ---
+# --- [PRIM] describe_environment: environment perceptual description ---
 class DescribeEnvironmentSig(dspy.Signature):
     """
-    [PRIM] 第四層：環境感知描述（多模態版 v0.3）
+    [PRIM] Layer 4: environment perceptual description (multimodal v0.3).
     BACKEND: LLM (multimodal-aware)
     RELIABILITY: environment_type_accuracy >= 0.75
     FAILURE_MODE: novel_environment -> confidence < 0.5
 
-    ★ 環境辨識特別受益於頻譜圖——
-      混響特徵、背景噪音紋理在視覺上非常明顯。
+    Environment recognition especially benefits from spectrograms because
+    reverberation and background-noise texture are visually salient.
     """
+
     acoustic_features: str = dspy.InputField(
-        desc="聲學特徵，關注混響、頻譜分布、時域模式"
+        desc="Acoustic features, especially reverberation, spectral distribution, and temporal pattern"
     )
-    # ★ Phase 3: 多模態輸入
     audio_clip: Optional[dspy.Audio] = dspy.InputField(
-        desc="原始音訊片段（直接聽環境聲可辨識場景類型）",
-        default=None
+        desc="Raw audio clip for direct listening to the environment soundscape",
+        default=None,
     )
     spectrogram: Optional[dspy.Image] = dspy.InputField(
-        desc="頻譜圖（混響、背景紋理在視覺上非常明顯）",
-        default=None
+        desc="Spectrogram image, useful for reverberation cues and background texture",
+        default=None,
     )
 
-    environment_type: str = dspy.OutputField(desc="環境類型描述")
-    acoustic_character: str = dspy.OutputField(desc="聲學特性描述")
-    confidence: float = dspy.OutputField(desc="環境判斷信心度 [0,1]")
+    environment_type: str = dspy.OutputField(desc="Environment-type description")
+    acoustic_character: str = dspy.OutputField(desc="Acoustic-character description")
+    confidence: float = dspy.OutputField(desc="Environment-classification confidence [0,1]")

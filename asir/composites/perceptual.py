@@ -1,33 +1,43 @@
 from typing import Optional
+
 import dspy
-from asir.types import AcousticFeatures
-from asir.primitives.perception import DescribeNoiseSig, DescribeSpeechSig, DescribeEnvironmentSig
+
+from asir.primitives.perception import (
+    DescribeEnvironmentSig,
+    DescribeNoiseSig,
+    DescribeSpeechSig,
+)
 from asir.routing.perceptual import PerceptAggregateRoutingSig
+from asir.types import AcousticFeatures
 
 
 class FullPerceptualDescription(dspy.Module):
     """
-    [COMP] 第四層：完整感知描述
+    [COMP] Layer 4: full perceptual description.
     = describe_noise + describe_speech + describe_environment
-    + ★ aggregate_router（Method A：可學習的聚合決策）
+    + aggregate_router (Method A: learnable aggregation policy)
 
-    改造前：confidence = min(三者)（hardcoded 保守策略）
-    改造後：confidence 由 aggregate_router 根據場景動態決定
+    Before the refactor, confidence was the hardcoded conservative minimum
+    across the three predictors. Now the aggregate router decides confidence
+    dynamically based on the scene.
     """
+
     def __init__(self):
         super().__init__()
-        # 三個 Primitive，各自獨立可優化（prompt 不動）
+        # Three independent PRIMs. Each remains separately optimizable.
         self.describe_noise = dspy.ChainOfThought(DescribeNoiseSig)
         self.describe_speech = dspy.ChainOfThought(DescribeSpeechSig)
         self.describe_env = dspy.ChainOfThought(DescribeEnvironmentSig)
-        # ★ 新增：Routing Predictor — GEPA 可優化
+        # Learnable routing predictor for GEPA.
         self.aggregate_router = dspy.ChainOfThought(PerceptAggregateRoutingSig)
 
-    def forward(self, acoustic_features: AcousticFeatures,
-                user_context: str,
-                audio_clip: Optional[dspy.Audio] = None,
-                spectrogram: Optional[dspy.Image] = None,
-                ) -> dspy.Prediction:
+    def forward(
+        self,
+        acoustic_features: AcousticFeatures,
+        user_context: str,
+        audio_clip: Optional[dspy.Audio] = None,
+        spectrogram: Optional[dspy.Image] = None,
+    ) -> dspy.Prediction:
         features_str = (
             f"SNR: {acoustic_features.snr_db} dB, "
             f"RT60: {acoustic_features.rt60_s} s, "
@@ -38,8 +48,8 @@ class FullPerceptualDescription(dspy.Module):
             f"MFCC: {acoustic_features.mfcc_summary}"
         )
 
-        # === Phase 1: 三個 PRIM 照跑 ===
-        # ★ Phase 3: 根據可用的多模態資料動態構建 kwargs
+        # Phase 1: run all three PRIMs.
+        # Phase 3: build multimodal kwargs dynamically based on available inputs.
         noise_kwargs = {
             "acoustic_features": features_str,
             "user_context": user_context,
@@ -50,7 +60,8 @@ class FullPerceptualDescription(dspy.Module):
         env_kwargs = {
             "acoustic_features": features_str,
         }
-        # ★ 多模態注入：只在有資料時傳入，否則 LLM 只看文字
+
+        # Inject multimodal inputs only when they are available.
         if audio_clip is not None:
             noise_kwargs["audio_clip"] = audio_clip
             speech_kwargs["audio_clip"] = audio_clip
@@ -64,7 +75,7 @@ class FullPerceptualDescription(dspy.Module):
         speech_result = self.describe_speech(**speech_kwargs)
         env_result = self.describe_env(**env_kwargs)
 
-        # === Phase 2: Routing Predictor 決定怎麼聚合 ===
+        # Phase 2: let the routing predictor decide how to aggregate the outputs.
         routing = self.aggregate_router(
             noise_summary=(
                 f"sources={str(noise_result.noise_sources_json)[:200]}, "
@@ -81,10 +92,10 @@ class FullPerceptualDescription(dspy.Module):
                 f"confidence={env_result.confidence}"
             ),
             snr_db=acoustic_features.snr_db,
-            n_sources=acoustic_features.n_active_sources
+            n_sources=acoustic_features.n_active_sources,
         )
 
-        # === Phase 3: 用 router 的判斷組合輸出 ===
+        # Phase 3: assemble the output using the router's judgment.
         overall_confidence = float(routing.overall_confidence)
 
         return dspy.Prediction(
@@ -99,11 +110,11 @@ class FullPerceptualDescription(dspy.Module):
                 f"Character: {env_result.acoustic_character}"
             ),
             confidence=overall_confidence,
-            # ★ 暴露權重，讓下游層和 metric 能看到
+            # Expose weights so downstream modules and metrics can inspect them.
             percept_weights={
                 "noise": float(routing.noise_weight),
                 "speech": float(routing.speech_weight),
-                "env": float(routing.env_weight)
+                "env": float(routing.env_weight),
             },
-            routing_reasoning=routing.routing_reasoning
+            routing_reasoning=routing.routing_reasoning,
         )

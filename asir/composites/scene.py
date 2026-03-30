@@ -1,36 +1,43 @@
 from typing import Optional
+
 import dspy
+
 from asir.primitives.scene import ReasonAboutSceneSig
 from asir.routing.scene import SceneRoutingSig
 
 
 class SceneWithHistory(dspy.Module):
     """
-    [COMP] 第五層：帶歷史的場景理解
-    = reason_about_scene |> ★ scene_router |> (conditional) resolve_contradictions
+    [COMP] Layer 5: scene understanding with history.
+    = reason_about_scene |> scene_router |> (conditional) resolve_contradictions
 
-    改造前：if recent_scenes → 一定跑 resolve_contradictions
-    改造後：scene_router 根據場景一致性動態決定是否需要矛盾解決
+    Before the refactor, any non-empty history always triggered contradiction
+    resolution. Now the scene router decides dynamically based on scene
+    consistency.
     """
+
     def __init__(self):
         super().__init__()
         self.reason_scene = dspy.ChainOfThought(ReasonAboutSceneSig)
-        # 矛盾解決也是一個 LLM Primitive
+        # Contradiction resolution is itself an LLM primitive.
         self.resolve_contradictions = dspy.ChainOfThought(
             "current_scene, recent_history -> resolved_scene: str, "
             "is_scene_change: bool, resolution_reasoning: str"
         )
-        # ★ 新增：Routing Predictor — 決定要不要跑矛盾解決
+        # Learnable routing predictor that decides whether contradiction resolution is worth running.
         self.scene_router = dspy.ChainOfThought(SceneRoutingSig)
 
-    def forward(self, percept: dspy.Prediction, user_profile: str,
-                recent_scenes: list[str],
-                spectrogram: Optional[dspy.Image] = None,
-                ) -> dspy.Prediction:
+    def forward(
+        self,
+        percept: dspy.Prediction,
+        user_profile: str,
+        recent_scenes: list[str],
+        spectrogram: Optional[dspy.Image] = None,
+    ) -> dspy.Prediction:
         history_str = " | ".join(recent_scenes[-5:]) if recent_scenes else "No history"
 
-        # === Phase 1: reason_scene 必跑 ===
-        # ★ Phase 3: 傳入頻譜圖輔助場景推理
+        # Phase 1: always run reason_scene.
+        # Phase 3: pass a spectrogram when available to support scene reasoning.
         scene_kwargs = {
             "noise_description": percept.noise_description,
             "speech_description": percept.speech_description,
@@ -43,31 +50,31 @@ class SceneWithHistory(dspy.Module):
 
         scene_result = self.reason_scene(**scene_kwargs)
 
-        # === Phase 2: Router 決定要不要跑矛盾解決 ===
+        # Phase 2: ask the router whether contradiction resolution is needed.
         routing = self.scene_router(
             current_scene_situation=scene_result.situation,
             current_scene_confidence=float(scene_result.confidence),
             recent_history=history_str,
-            history_length=len(recent_scenes)
+            history_length=len(recent_scenes),
         )
 
-        # === Phase 3: 根據 routing 決定執行路徑 ===
+        # Phase 3: choose the execution path based on routing.
         if routing.should_resolve and recent_scenes:
             resolved = self.resolve_contradictions(
                 current_scene=scene_result.situation,
-                recent_history=history_str
+                recent_history=history_str,
             )
             final_situation = resolved.resolved_scene
         else:
-            # ★ Router 說不需要 → 跳過矛盾解決，省一次 LLM call
+            # Router says resolution is not needed, so skip the extra LLM call.
             final_situation = scene_result.situation
 
         return dspy.Prediction(
             situation=final_situation,
             challenges_json=scene_result.challenges_json,
             preservation_notes_json=scene_result.preservation_notes_json,
-            # ★ 信心度由 router 調整，不再只用 reason_scene 的原始值
+            # Confidence is adjusted by the router instead of blindly using the raw L5 output.
             confidence=float(routing.adjusted_confidence),
             history_consistency=routing.history_consistency,
-            routing_reasoning=routing.routing_reasoning
+            routing_reasoning=routing.routing_reasoning,
         )

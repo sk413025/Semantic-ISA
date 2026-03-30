@@ -1,177 +1,197 @@
 # ASIR — Acoustic Semantic Instruction Register
 
-> **Research Prototype** — 研究用原型，API 隨時可能改動。
+> **Research Prototype** — Experimental API, subject to change.
 
-用 LLM 讓助聽器「聽懂」場景，動態調整 DSP 參數。
+ASIR uses LLM reasoning to help hearing devices interpret acoustic scenes and
+adapt DSP parameters dynamically.
 
+```text
+Microphone Array ──→ [ Signal Analysis → LLM Semantic Reasoning → Strategy Planning ] ──→ DSP Parameters
+  2-ch PCM             L1-L3 numpy        L4-L5 scene understanding    L6 strategy      beam_weights
+  16kHz                                      L7 user preferences                          noise_mask
+                                                                                         gain, compression
+                                  ↑
+                         User feedback: "too muffled", "focus_front"
 ```
-麥克風陣列 ──→ [ 訊號分析 → LLM 語意推理 → 策略規劃 ] ──→ DSP 參數
-  2-ch PCM       L1-L3 numpy    L4-L5 場景理解   L6 策略     beam_weights
-  16kHz                          L7 使用者偏好               noise_mask
-                                                              gain, compression
-                        ↑
-                  使用者：「太悶了」「focus_front」
-```
 
-## 為什麼需要這個？
+## Why This Exists
 
-傳統助聽器用固定規則做降噪和增益。但在菜市場、多人對話、迴響大廳這些場景，
-固定規則不知道「使用者想聽前面那個人說話」還是「想聽到整個環境」。
+Traditional hearing aids rely on fixed rules for noise reduction and gain.
+Those rules struggle in settings like wet markets, overlapping conversations,
+or reverberant halls because they do not understand whether the user wants to
+focus on one speaker or preserve overall environmental awareness.
 
-ASIR 在確定性 DSP 之上加一層 LLM 推理：先分析聲學特徵，再用語言模型理解場景語意，最後把語意決策翻譯回 DSP 硬體能執行的參數。
+ASIR adds an LLM reasoning layer on top of deterministic DSP. It first extracts
+acoustic features, then interprets scene semantics with a language model, and
+finally translates the semantic decision back into DSP parameters that real
+hardware can execute.
 
-## 場景範例：菜市場
+## Example Scenario: Wet Market Conversation
 
-一個 72 歲聽損使用者戴著助聽器走進菜市場：
+Consider a 72-year-old user with hearing loss walking into a wet market while
+wearing hearing aids:
 
-1. **收音** — 麥克風陣列收到 2 通道原始音訊
-2. **訊號分析（L1-L3）** — 算出 SNR≈0dB、RT60≈0.6s、8 聲源、78dB
-3. **場景描述（L4）** — LLM 從數值特徵（或頻譜圖）描述噪音/語音/環境
-4. **場景理解（L5）** — LLM 綜合判斷場景類型與挑戰
-5. **策略規劃（L6）** — LLM 決定波束方向、降噪強度、增益策略
-6. **翻譯** — 語意策略 → DSP 參數（beam_weights, noise_mask, compression...）
-7. **使用者回饋（L7）** — 「太悶了」→ 更新偏好 → 下一幀調整降噪
+1. **Capture** — the microphone array records 2-channel audio.
+2. **Signal analysis (L1-L3)** — the system estimates SNR≈0 dB, RT60≈0.6 s,
+   8 active sources, and 78 dB SPL.
+3. **Perceptual description (L4)** — the LLM describes noise, speech, and
+   environment from numeric features or spectrograms.
+4. **Scene understanding (L5)** — the LLM infers scene type and listening
+   challenges.
+5. **Strategy generation (L6)** — the LLM decides beam direction, noise
+   reduction strength, and gain strategy.
+6. **Translation** — semantic strategy becomes DSP parameters such as
+   `beam_weights`, `noise_mask`, and `compression_ratio`.
+7. **User feedback (L7)** — a complaint like "too muffled" updates user
+   preferences and adjusts the next frame.
 
-### 實際 demo 輸出（run_demo, gpt-4o-mini, multimodal=True）
+### Demo Snapshot (`run_demo`, `gpt-4o-mini`, `multimodal=True`)
 
-> **L4:** "ambient noise, varied direction, modulated, moderate" + "crowded indoor environment, complex, reverberant"
-> **L5:** "crowded indoor space with multiple overlapping sound sources" (confidence=0.85)
-> **L6:** beam=0° width=60°, NR=0.4, compression=1.86
-> **L7:** 使用者說「太悶了」→ NR 降到 0.3, noise_tolerance: "medium"→"low"
+> **L4:** "ambient noise, varied direction, modulated, moderate" +
+> "crowded indoor environment, complex, reverberant"
 >
-> LLM 從頻譜圖能辨識「多人聲+迴響」但仍無法區分「菜市場」和「百貨公司」。
-> 改進路徑：菜市場特有音檔（金屬碰撞+馬達）+ GEPA prompt 優化。
+> **L5:** "crowded indoor space with multiple overlapping sound sources"
+> (`confidence=0.85`)
+>
+> **L6:** `beam=0°`, `width=60°`, `NR=0.4`, `compression=1.86`
+>
+> **L7:** user says "too muffled" → NR drops to `0.3`,
+> `noise_tolerance: "medium" -> "low"`
+>
+> In the current prototype, the model can often identify
+> "multiple voices + reverberation" from spectrograms, but may still confuse
+> a wet market with another crowded indoor environment. A likely next step is
+> adding wet-market-specific audio cues such as metal impacts and motors, plus
+> further GEPA prompt optimization.
 
-### 設計目標 vs 現狀
+### Design Targets vs Current Prototype
 
-| 面向 | 設計目標 | 現狀 | 改進路徑 |
-|------|---------|------|---------|
-| L4/L5 場景辨識 | 「菜市場跟攤販對話」 | 「crowded indoor space」 | 菜市場特徵音檔 + GEPA |
-| L6 降噪強度 | 強降噪 (NR>0.5) | NR=0.4 | GEPA prompt 優化 |
-| L7 回饋迴路 | 「太悶了」→ 降低 NR | NR 0.4→0.3 + 偏好更新 ✓ | 已運作 |
+| Dimension | Target | Current state | Improvement path |
+|---|---|---|---|
+| L4/L5 scene recognition | "wet market conversation with a vendor" | "crowded indoor space" | add wet-market acoustic cues + GEPA |
+| L6 noise reduction | strong reduction (`NR > 0.5`) | `NR = 0.4` | optimize prompts with GEPA |
+| L7 feedback loop | "too muffled" lowers NR | `0.4 -> 0.3` + preferences updated | already working |
 
-## 七層架構與領域術語
+## Seven-Layer Stack and Domain Terms
 
-術語直接標注在它被使用的層級，不用另外查表：
-
-```
+```text
 L1 Physical Sensing                            [deterministic, numpy]
-    輸入: PCM 原始音訊 (未壓縮浮點數, 每 sample 一個值)
-    麥克風陣列 --> RawSignal (2-ch, 16kHz, 32ms/frame)
+    Input: raw PCM audio (uncompressed floating-point samples)
+    Microphone array --> RawSignal (2-ch, 16kHz, 32ms/frame)
 
 L2 Signal Processing                           [deterministic, numpy]
-    FFT            -- 時域-->頻域轉換, 所有頻域處理的前置步驟
-    Beamforming    -- 多麥克風空間濾波, 增強某方向 --> beam_weights
-    Spectral Sub.  -- 頻譜減去噪音估計 --> 降噪
+    FFT            -- time-domain to frequency-domain transform
+    Beamforming    -- multi-microphone spatial filtering --> beam_weights
+    Spectral Sub.  -- subtract estimated noise spectrum --> denoising
 
 L3 Acoustic Features                           [deterministic, numpy]
-    SNR   -- 訊噪比 (dB), 負值=噪音蓋過語音, 菜市場約 -5~5 dB
-    RT60  -- 迴響衰減 60dB 的秒數, 0.3s=小房間, >1s=大廳
-    MFCC  -- 模仿人耳頻率感知的特徵向量
+    SNR   -- signal-to-noise ratio (dB), negative means noise dominates speech
+    RT60  -- seconds needed for reverberation to decay by 60 dB
+    MFCC  -- features that approximate human auditory frequency perception
 
 ====================== SEMANTIC BOUNDARY ======================
 
-L4 Perceptual Description              [DSPy ChainOfThought, fast_lm]
-    3 個 Signature 分別描述噪音/語音/環境
-    aggregate_router -- learnable 路由, 非 hardcoded if-else
-                        (Method A: GEPA 主要最佳化目標)
+L4 Perceptual Description                      [DSPy ChainOfThought, fast_lm]
+    Three Signatures describe noise, speech, and environment
+    aggregate_router -- learnable routing, not hard-coded if/else
+                        (Method A: a primary GEPA target)
 
-L5 Scene Understanding                [DSPy ChainOfThought, strong_lm]
-    綜合 L4 描述 + 場景歷史 --> 場景判斷
-    scene_router -- 決定是否啟動矛盾解決
+L5 Scene Understanding                        [DSPy ChainOfThought, strong_lm]
+    Combines L4 descriptions with scene history --> scene judgment
+    scene_router -- decides whether contradiction resolution is needed
 
 ====================== SEMANTIC BOUNDARY ======================
 
-L6 Strategy Generation                [DSPy ChainOfThought, strong_lm]
+L6 Strategy Generation                        [DSPy ChainOfThought, strong_lm]
     strategy_planner --> gen_beam + gen_nr + gain --> integrator
-    NAL-NL2      -- 根據 Audiogram 算每頻率放大量的處方公式
-      Audiogram  = 各頻率聽力閾值 {"250":30, "1000":40} (dB HL)
-    輸出:
-      Noise Mask   -- 逐頻率 0-1 遮罩 (0=抑制, 1=保留)
-      Compression  -- 動態壓縮 (ratio 2:1 = +2dB輸入 --> +1dB輸出)
+    NAL-NL2      -- prescription formula mapping audiogram to per-band gain
+    Outputs:
+      Noise Mask   -- per-frequency 0-1 mask (0=suppress, 1=preserve)
+      Compression  -- dynamic range compression
 
-L7 Intent & Preference                [DSPy ChainOfThought, strong_lm]
-    解析使用者動作 ("太吵了" / "focus_front")
-    SNHL   -- 感音神經性聽損, 老年聽損主因, 高頻損失較嚴重
-    dB HL  -- 聽力圖單位: 0=正常, 30=輕度, 50=中度, 70=重度
-    更新偏好 --> 影響下一幀的 L4-L6 策略
+L7 Intent & Preference                        [DSPy ChainOfThought, strong_lm]
+    Interprets user actions ("too noisy", "focus_front")
+    SNHL          -- sensorineural hearing loss
+    dB HL         -- audiogram unit (0=normal, 30=mild, 50=moderate, 70=severe)
+    Updates preferences --> influences the next frame's L4-L6 strategy
 
 --------------------------------------------------------------
 DSPy           = Stanford LLM framework (Signature + Module + Optimizer)
-GEPA           = 演化策略在 Pareto frontier 最佳化 LLM prompt
-ChainOfThought = DSPy 推理模組, 自動加入 step-by-step reasoning
-Method A       = 用 learnable predictor 做路由, GEPA 最佳化目標
+GEPA           = Pareto-frontier optimization for LLM prompts
+ChainOfThought = DSPy reasoning module with step-by-step reasoning
+Method A       = learnable predictors used for routing and GEPA optimization
 ```
 
 ## Quick Start
 
 ```bash
-# Step 0: 合成 10 個場景測試音檔（菜市場、餐廳、教堂等，只需跑一次）
+# Step 0: generate 10 scenario test WAV files (wet market, restaurant, church, etc.)
+# Only needs to be run once.
 PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
 
-# Step 1: 完整 demo — 菜市場 → LLM 語意推理 → DSP → 「太悶了」回饋 → 偏好更新
-#   需要 OPENAI_API_KEY，推理 trace 記錄到 MLflow (mlflow ui 查看)
+# Step 1: full demo — wet market → semantic reasoning → DSP →
+# "too muffled" feedback → preference update
+# Requires OPENAI_API_KEY. Traces are logged to MLflow.
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
-# Step 2: 跑測試（L1-L3 確定性 + 場景一致性驗證）
+# Step 2: deterministic tests (L1-L3 + scenario consistency)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# Step 3: 語意測試（L4-L7 推理品質，需要 API key）
+# Step 3: semantic tests (L4-L7 reasoning quality, requires API key)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 ```
 
-> 沒有 API key？`python -m examples.run_demo --l1-l3` 只跑確定性層。
+> No API key? Run `python -m examples.run_demo --l1-l3` for deterministic layers only.
 
-> Windows 必須加 `PYTHONUTF8=1 python -X utf8`，否則會遇到 cp1252 encoding error。
+> On Windows, keep `PYTHONUTF8=1 python -X utf8` to avoid cp1252 encoding issues.
 
-### 測試音檔
+### Test Audio Assets
 
-`asir/eval/audio/` 存放所有測試用音檔（Git LFS 追蹤）：
+All evaluation audio lives under `asir/eval/audio/` and is tracked with Git LFS:
 
-```
+```text
 asir/eval/audio/
-├── scenarios/          # 10 個場景混合音檔（stereo 16kHz, 5s）
-│   ├── wet_market_vendor.wav    # 菜市場：多人+金屬碰撞+馬達
-│   ├── market_too_muffled.wav   # 同上，搭配 user_action="太悶了"
-│   ├── restaurant_dinner.wav    # 餐廳多人對話
-│   └── ...（共 10 個場景）
-├── speech/             # 3 個語音片段（TTS 合成，16kHz mono）
-└── noise/              # （可選）DEMAND 噪音資料集
+├── scenarios/          # 10 mixed scenario WAV files (stereo 16kHz, 5s)
+│   ├── wet_market_vendor.wav
+│   ├── market_too_muffled.wav
+│   ├── restaurant_dinner.wav
+│   └── ...
+├── speech/             # 3 clean speech clips (TTS, 16kHz mono)
+└── noise/              # optional DEMAND noise dataset
 ```
 
-**誰用這些音檔：**
-- `examples/run_demo.py` — demo 用菜市場音檔跑完整管線
-- `tests/test_deterministic.py` — pytest 載入 10 個場景 WAV 跑 L1-L3
-- `tests/test_semantic.py` — pytest L4-L7 語意推理（用 `asir/eval/examples.py` 場景定義）
-- `tests/test_integration.py` — pytest 端對端（真實音檔 → 完整 harness）
-- `asir/eval/run.py` — semantic eval（10 場景 L4-L7 品質）
-- `asir/eval/integration.py` — integration eval（真實音檔 → 完整管線）
+**Where these files are used**
+- `examples/run_demo.py` — end-to-end demo using the wet-market scenario
+- `tests/test_deterministic.py` — L1-L3 pytest coverage on all 10 scenario WAVs
+- `tests/test_semantic.py` — semantic evaluation using scenario definitions
+- `tests/test_integration.py` — real-audio end-to-end harness validation
+- `asir/eval/run.py` — semantic evaluation runner
+- `asir/eval/integration.py` — integration evaluation runner
 
-**合成方式：** `asir/eval/generate_audio.py` — 用 numpy/scipy 合成不同噪音類型（babble、market、traffic 等），混合 TTS 語音，加入迴響。
+**How they are generated**
+- `asir/eval/generate_audio.py` synthesizes different noise types
+  (`babble`, `market`, `traffic`, etc.), mixes TTS speech, and adds reverberation.
 
 ## Tech Stack
 
-| | |
+| Component | Role |
 |---|---|
-| **DSPy** ≥ 2.6 | LLM programming framework（Signature + Module + GEPA optimizer） |
-| **NumPy / SciPy** | L1-L3 確定性訊號處理 |
-| **Matplotlib** | 頻譜圖生成（dspy.Image） |
-| **Python** ≥ 3.10 | |
-| Recommended LM | `gpt-4o-mini`（fast_lm）+ `gpt-4o`（strong_lm） |
+| **DSPy** `>= 2.6` | LLM programming framework (`Signature`, `Module`, `GEPA`) |
+| **NumPy / SciPy** | deterministic L1-L3 signal processing |
+| **Matplotlib** | spectrogram generation for `dspy.Image` |
+| **Python** `>= 3.10` | runtime |
+| Recommended models | `gpt-4o-mini` (`fast_lm`) + `gpt-4o` (`strong_lm`) |
 
-## 開發文件
+## Development Documents
 
-`docs/` 目錄下的開發背景與設計文件：
-
-1. `01-LLM聲學研究意義` — 為什麼用 LLM 做聲學處理
-2. `02-語意ISA` — Semantic ISA 概念設計
-3. `03-語意ISA-HarnessEngineering` — Harness engineering 設計
-4. `04-語音評估的語意ISA相關研究` — 語音評估相關背景
-5. `05-Semantic IR——從物理層到意圖層` — 從物理層到意圖層的架構演進
-6. `06-Acoustic Semantic IR (ASIR)` — 完整七層規格書
+The `docs/` directory stores archived design and research notes related to ASIR,
+LLM-guided acoustics, harness engineering, speech evaluation, and the full
+seven-layer Acoustic Semantic IR design.
 
 ---
 
-**Coding agents**: 技術細節（I/O spec、package 結構、開發指南）見 [`CLAUDE.md`](CLAUDE.md)，invariants 和測試方式見 [`AGENTS.md`](AGENTS.md)。
+**Coding agents**: implementation details such as I/O specs, package layout,
+and development guidance live in [`CLAUDE.md`](CLAUDE.md). Operational
+invariants and testing workflow live in [`AGENTS.md`](AGENTS.md).
 
-License: Research use only. 未定正式 license。
+License: research use only. No formal license has been assigned yet.

@@ -2,7 +2,7 @@
 Generate test audio files for ASIR integration evaluation.
 
 Data sources:
-  Speech: Gemini TTS (GEMINI_API_KEY) → Chinese daily conversation
+  Speech: Gemini TTS (GEMINI_API_KEY) -> everyday English conversation
           Fallback: sine wave + amplitude modulation (speech-like envelope)
   Noise:  Synthetic noise with spectral shaping (numpy + scipy)
           Upgrade: place DEMAND WAV files in examples/audio/noise/
@@ -46,7 +46,7 @@ DEMAND_MAP = {
     "car_conversation": "TCAR",
     "noisy_cafe_complaint": "PCAFETER",
     "severe_loss_quiet_home": "DLIVING",
-    "wet_market_vendor": "SPSQUARE",       # 公共廣場（半開放，最像菜市場）
+    "wet_market_vendor": "SPSQUARE",       # semi-open public square, the closest wet-market proxy
     "market_too_muffled": "SPSQUARE",
 }
 
@@ -60,7 +60,7 @@ NOISE_TYPE_MAP = {
     "car_conversation": "car",
     "noisy_cafe_complaint": "babble",
     "severe_loss_quiet_home": "quiet",
-    "wet_market_vendor": "market",          # 菜市場：多人+金屬碰撞+馬達
+    "wet_market_vendor": "market",          # wet market: crowd + metallic hits + motor rumble
     "market_too_muffled": "market",
 }
 
@@ -82,9 +82,9 @@ SCENARIOS = [
 ]
 
 SPEECH_SENTENCES = [
-    "用正常語速說：你好，今天晚餐想吃什麼？我們可以去附近那家餐廳看看。",
-    "用正常語速說：請問這個多少錢？我想買兩個，可以算便宜一點嗎？",
-    "用正常語速說：不好意思，請問到捷運站怎麼走？走路大概要多久？",
+    "Say at a natural speaking rate: Hi, what would you like for dinner tonight? We could check out that restaurant nearby.",
+    "Say at a natural speaking rate: Excuse me, how much does this cost? I would like to buy two. Could you offer a small discount?",
+    "Say at a natural speaking rate: Sorry, could you tell me how to get to the metro station? About how long would it take to walk there?",
 ]
 
 
@@ -102,7 +102,7 @@ def _load_env():
 
 
 def generate_speech_gemini():
-    """Generate Chinese speech clips via Gemini TTS (24kHz → resample to 16kHz)."""
+    """Generate English speech clips via Gemini TTS (24kHz -> resample to 16kHz)."""
     _load_env()
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -266,7 +266,7 @@ def _generate_synthetic_noise(noise_type, duration_s, sr, seed=42):
         return (noise / (np.max(np.abs(noise)) + 1e-10)).astype(np.float32)
 
     elif noise_type == "market":
-        # 菜市場: babble + metallic transients (秤/硬幣/鐵盤) + motor rumble (冰箱/發電機)
+        # Wet market: babble + metallic transients + motor rumble
         noise = np.zeros(n)
         # Multi-talker base (8 voices, denser than babble)
         for i in range(8):

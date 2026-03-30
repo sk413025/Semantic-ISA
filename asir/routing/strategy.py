@@ -3,78 +3,79 @@ import dspy
 
 class StrategyPlanSig(dspy.Signature):
     """
-    [ROUTING] L6 Composite 前置規劃：在 beam/NR/gain 三個 PRIM 執行之前，
-    根據場景理解先規劃它們的協作方式。
+    [ROUTING] Pre-plan the L6 composite before running beam / NR / gain.
 
-    你要回答：
-    - 此場景的核心聲學挑戰是什麼？
-    - beam 和 NR 應該怎麼配合？
-    - 總處理預算（保守/中等/積極）是多少？
+    Answer:
+    - What is the core acoustic challenge in this scene?
+    - How should beamforming and NR cooperate?
+    - What overall processing budget is appropriate:
+      conservative, moderate, or aggressive?
 
-    物理約束提示：
-    - BTE 助聽器只有 2 支麥克風，間距 10mm → beam 最窄 ~20°
-    - 方向性噪音 → beam 主導（把 null 對準噪音）
-    - 擴散噪音 → NR 主導（beam 幫不了）
-    - 使用者偏好「自然」→ 保守預算，避免過度處理
+    Physical constraints:
+    - BTE hearing aids have only two microphones with ~10 mm spacing,
+      so the narrowest realistic beam is about 20 degrees.
+    - Directional noise -> beamforming should dominate by placing nulls on the noise.
+    - Diffuse noise -> NR should dominate because beamforming cannot suppress it well.
+    - If the user prefers natural sound, stay conservative and avoid over-processing.
     """
-    scene_situation: str = dspy.InputField(desc="L5 場景描述")
-    scene_challenges: str = dspy.InputField(desc="L5 識別的挑戰列表 JSON")
-    user_preferences: str = dspy.InputField(desc="使用者偏好 JSON")
-    mic_geometry: str = dspy.InputField(desc="麥克風陣列幾何")
+
+    scene_situation: str = dspy.InputField(desc="L5 scene description")
+    scene_challenges: str = dspy.InputField(desc="JSON list of L5-identified challenges")
+    user_preferences: str = dspy.InputField(desc="User preferences JSON")
+    mic_geometry: str = dspy.InputField(desc="Microphone array geometry")
 
     primary_challenge: str = dspy.OutputField(
-        desc="核心聲學挑戰: "
-        "'directional_noise' | 'diffuse_noise' | "
-        "'reverberation' | 'quiet'"
+        desc="Primary acoustic challenge: 'directional_noise' | 'diffuse_noise' | 'reverberation' | 'quiet'"
     )
     beam_nr_coordination: str = dspy.OutputField(
-        desc="beam 和 NR 的協作指令（會被注入各 PRIM 的 context）。"
-        "例：'Beam 瞄準前方 0°，NR 應保留 beam 主軸方向的語音頻段'"
+        desc="Coordination instructions for beamforming and NR, injected into downstream PRIM contexts. "
+        "Example: 'Aim the beam at 0° and keep speech bands near the beam axis less suppressed by NR.'"
     )
     aggressiveness_budget: str = dspy.OutputField(
         desc="'conservative' | 'moderate' | 'aggressive'"
     )
-    planning_reasoning: str = dspy.OutputField(desc="規劃理由")
+    planning_reasoning: str = dspy.OutputField(desc="Planning rationale")
 
 
 class StrategyIntegrateSig(dspy.Signature):
     """
-    [ROUTING] L6 Composite 後置整合：三個 PRIM 都跑完了，
-    檢查結果有沒有衝突，給出最終策略信心度。
+    [ROUTING] Post-integrate the L6 composite after all three PRIMs run.
 
-    常見衝突：
-    - beam 瞄 30° 但 NR preserve_bands 沒有保護該方向
-    - NR aggressiveness=0.8 但使用者偏好自然（通常 0.3-0.5）
-    - beam_width 太窄（<20°）違反物理約束
-    - gain 壓縮比太高會讓聲音不自然
+    Check whether the three sub-strategies conflict and produce a final
+    strategy confidence score.
 
-    你可以微調 NR aggressiveness 來解決衝突，
-    但不要大幅改動（±0.2 以內）。
+    Common conflicts:
+    - The beam targets 30° but NR preserve_bands does not protect that direction.
+    - NR aggressiveness is 0.8 while the user prefers natural sound.
+    - beam_width < 20° violates physical constraints.
+    - The gain compression ratio is so high that the sound would become unnatural.
+
+    You may fine-tune NR aggressiveness to resolve conflicts,
+    but do not make large changes (keep them within ±0.2).
     """
+
     beam_summary: str = dspy.InputField(
-        desc="beam 結果：azimuth, width, nulls, reasoning"
+        desc="Beam result summary: azimuth, width, nulls, reasoning"
     )
     nr_summary: str = dspy.InputField(
-        desc="NR 結果：method, aggressiveness, preserve_bands, reasoning"
+        desc="NR result summary: method, aggressiveness, preserve_bands, reasoning"
     )
     gain_summary: str = dspy.InputField(
-        desc="gain 結果：per-frequency gains, compression ratio"
+        desc="Gain result summary: per-frequency gains, compression ratio"
     )
     coordination_plan: str = dspy.InputField(
-        desc="Phase 1 router 規劃的協作指令"
+        desc="Coordination plan proposed by the phase-1 router"
     )
-    user_preferences: str = dspy.InputField(desc="使用者偏好 JSON")
+    user_preferences: str = dspy.InputField(desc="User preferences JSON")
 
     has_conflict: bool = dspy.OutputField(
-        desc="三個子策略之間有沒有衝突？"
+        desc="Whether the three sub-strategies conflict with one another"
     )
     conflict_description: str = dspy.OutputField(
-        desc="如有衝突，描述是什麼；如無，寫 'none'"
+        desc="Describe the conflict if one exists; otherwise write 'none'"
     )
     adjusted_nr_aggressiveness: float = dspy.OutputField(
-        desc="整合後 NR 攻擊性 [0,1]，可能微調以配合 beam 和偏好"
+        desc="Integrated NR aggressiveness [0,1], optionally adjusted to fit the beam and preferences"
     )
-    overall_confidence: float = dspy.OutputField(
-        desc="策略整體信心度 [0,1]"
-    )
-    integration_reasoning: str = dspy.OutputField(desc="整合推理")
+    overall_confidence: float = dspy.OutputField(desc="Overall strategy confidence [0,1]")
+    integration_reasoning: str = dspy.OutputField(desc="Integration reasoning")

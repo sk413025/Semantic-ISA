@@ -29,6 +29,6 @@ Desktop.ini
 runs/
 programs/
 
-# MLflow (eval + GEPA 結果都在這裡，mlflow ui 查看)
+# MLflow (all eval + GEPA outputs live here; inspect with `mlflow ui`)
 mlruns/
 mlartifacts/

@@ -1,28 +1,35 @@
 """
-L1-L3 Deterministic Layer Tests
+L1-L3 deterministic layer tests.
 
-這些測試不需要 API key，純 numpy 驗證。
-用合成訊號測試每個 PRIM 的物理正確性。
-也用 asir/eval/ 的場景定義和音檔做整合驗證。
+These tests do not require API access. They validate the physics-facing and
+signal-processing primitives with pure NumPy inputs and also reuse the
+scenario definitions and audio files under `asir/eval/`.
 """
+
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
-from asir.types import RawSignal
+
+from asir.eval.examples import create_eval_examples
 from asir.primitives import (
-    prim_sample_audio, prim_fft, prim_estimate_noise_psd,
-    prim_beamform, comp_spectral_subtract,
-    prim_extract_mfcc, prim_estimate_snr, prim_estimate_rt60,
-    comp_extract_full_features, prim_generate_gain_params,
+    comp_extract_full_features,
+    comp_spectral_subtract,
+    prim_beamform,
+    prim_estimate_noise_psd,
+    prim_estimate_rt60,
+    prim_estimate_snr,
+    prim_extract_mfcc,
+    prim_fft,
+    prim_generate_gain_params,
+    prim_sample_audio,
 )
 from asir.primitives.signal import prim_load_audio
-from asir.eval.examples import create_eval_examples
+from asir.types import RawSignal
 
-
-# ===== Helpers: 合成已知特性的訊號 =====
 
 def make_signal(samples_ch0, samples_ch1=None, sample_rate=16000):
-    """從 numpy array 建立 RawSignal。"""
+    """Build a `RawSignal` from NumPy arrays."""
     ch0 = np.asarray(samples_ch0, dtype=float)
     ch1 = np.asarray(samples_ch1, dtype=float) if samples_ch1 is not None else ch0.copy()
     return RawSignal(
@@ -34,22 +41,20 @@ def make_signal(samples_ch0, samples_ch1=None, sample_rate=16000):
 
 
 def make_tone(freq_hz=440, duration_s=0.1, amplitude=1.0, sample_rate=16000):
-    """產生純音訊號。"""
+    """Generate a pure tone."""
     t = np.linspace(0, duration_s, int(sample_rate * duration_s), endpoint=False)
     return amplitude * np.sin(2 * np.pi * freq_hz * t)
 
 
 def make_noise(duration_s=0.1, amplitude=1.0, sample_rate=16000):
-    """產生高斯白噪音。"""
+    """Generate white Gaussian noise."""
     n = int(sample_rate * duration_s)
     return amplitude * np.random.RandomState(42).randn(n)
 
 
-# ===== L1: Physical Sensing =====
-
 class TestL1PhysicalSensing:
     def test_sample_audio_shape(self):
-        """prim_sample_audio 回傳正確的 RawSignal 結構。"""
+        """`prim_sample_audio` should return a correctly shaped RawSignal."""
         sig = prim_sample_audio(duration_ms=32.0, n_channels=2)
         assert sig.n_channels == 2
         assert sig.sample_rate == 16000
@@ -59,21 +64,17 @@ class TestL1PhysicalSensing:
         assert len(sig.samples[0]) == expected_n
         assert len(sig.samples[1]) == expected_n
 
-    def test_sample_audio_deterministic(self):
-        """同樣參數應產生相同訊號（固定 seed 在實作中）。"""
-        # prim_sample_audio 用 np.random，不保證 deterministic
-        # 但 shape 和 range 應該一致
+    def test_sample_audio_value_range(self):
+        """Generated samples should remain finite and within a reasonable range."""
         sig = prim_sample_audio(duration_ms=10.0)
         arr = np.array(sig.samples[0])
-        assert np.all(np.isfinite(arr)), "should have no NaN/inf"
-        assert np.max(np.abs(arr)) < 100, "amplitude should be reasonable"
+        assert np.all(np.isfinite(arr)), "should have no NaN or inf"
+        assert np.max(np.abs(arr)) < 100, "amplitude should stay reasonable"
 
-
-# ===== L2: Signal Processing =====
 
 class TestL2SignalProcessing:
     def test_fft_output_structure(self):
-        """prim_fft 回傳 magnitude, phase, freq_bins。"""
+        """`prim_fft` should return magnitude, phase, and frequency-bin count."""
         sig = make_signal(make_tone(440, 0.032))
         result = prim_fft(sig)
         assert "magnitude" in result
@@ -83,7 +84,7 @@ class TestL2SignalProcessing:
         assert len(result["phase"]) == result["freq_bins"]
 
     def test_fft_peak_at_target_frequency(self):
-        """純音 440Hz 的 FFT 應在 440Hz 附近有峰值。"""
+        """A 440 Hz tone should yield an FFT peak near 440 Hz."""
         sr = 16000
         sig = make_signal(make_tone(440, 0.1, sample_rate=sr), sample_rate=sr)
         result = prim_fft(sig)
@@ -93,46 +94,40 @@ class TestL2SignalProcessing:
         assert abs(peak_freq - 440) < 50, f"peak at {peak_freq}Hz, expected ~440Hz"
 
     def test_beamform_output_length(self):
-        """波束成形輸出長度應等於輸入。"""
+        """Beamforming output should keep the same sample length as the input."""
         sig = prim_sample_audio(duration_ms=32.0)
         bf = prim_beamform(sig, target_azimuth_deg=0.0)
         assert len(bf) == len(sig.samples[0])
 
     def test_beamform_front_enhances_correlated_signal(self):
-        """target=0° 時，兩通道相同的訊號應被增強。"""
+        """A front-facing correlated signal should be preserved or slightly enhanced."""
         tone = make_tone(200, 0.032)
-        sig = make_signal(tone, tone)  # 完全相關 = 正前方
+        sig = make_signal(tone, tone)
         bf = np.array(prim_beamform(sig, target_azimuth_deg=0.0))
-        # 增強後的能量應 >= 單通道
-        assert np.mean(bf ** 2) >= np.mean(np.array(tone) ** 2) * 0.8
+        assert np.mean(bf**2) >= np.mean(np.array(tone) ** 2) * 0.8
 
     def test_noise_psd_output_length(self):
-        """噪音 PSD 輸出長度應等於 FFT bins。"""
+        """Noise PSD output length should match the FFT bin count."""
         sig = prim_sample_audio()
         psd = prim_estimate_noise_psd(sig)
         fft_bins = len(np.fft.rfft(sig.samples[0]))
         assert len(psd) == fft_bins
 
     def test_spectral_subtract_reduces_noise(self):
-        """頻譜相減應降低噪音能量。"""
+        """Spectral subtraction should return a valid denoised waveform."""
         noise = make_noise(0.032, amplitude=0.5)
         tone = make_tone(440, 0.032, amplitude=1.0)
         noisy = tone + noise
         sig = make_signal(noisy)
         noise_psd = prim_estimate_noise_psd(sig)
         cleaned = comp_spectral_subtract(sig, noise_psd, alpha=1.0)
-        # cleaned 的噪音能量應比原始低（至少不會增加太多）
         assert len(cleaned) > 0
         assert np.all(np.isfinite(cleaned))
 
 
-# ===== L3: Acoustic Features =====
-
 class TestL3AcousticFeatures:
     def test_snr_high_for_clean_signal(self):
-        """有語音段+安靜段的訊號，SNR 應較高。"""
-        # 純等幅正弦波各幀能量相同，estimator 無法區分 signal/noise
-        # 用「前半段有訊號+後半段幾乎靜音」模擬真實情況
+        """A signal-plus-silence pattern should produce a relatively high SNR."""
         tone = make_tone(440, 0.05, amplitude=1.0)
         silence = np.zeros(int(16000 * 0.05))
         combined = np.concatenate([tone, silence])
@@ -141,7 +136,7 @@ class TestL3AcousticFeatures:
         assert snr > 5, f"signal+silence SNR={snr}, expected > 5 dB"
 
     def test_snr_low_for_noisy_signal(self):
-        """噪音遠大於訊號時 SNR 應較低。"""
+        """Noise-dominated inputs should produce a lower SNR."""
         noise = make_noise(0.1, amplitude=2.0)
         tiny_tone = make_tone(440, 0.1, amplitude=0.01)
         sig = make_signal(tiny_tone + noise)
@@ -149,21 +144,21 @@ class TestL3AcousticFeatures:
         assert snr < 20, f"noisy signal SNR={snr}, expected < 20 dB"
 
     def test_rt60_is_positive(self):
-        """RT60 估計應為正數。"""
+        """Estimated RT60 should be non-negative."""
         sig = prim_sample_audio(duration_ms=100.0)
         rt60 = prim_estimate_rt60(sig)
         assert rt60 >= 0, f"RT60={rt60}, should be >= 0"
 
     def test_mfcc_returns_string(self):
-        """MFCC 摘要應回傳包含 Energy 和 centroid 的文字。"""
+        """MFCC summary should mention energy and centroid-like descriptors."""
         sig = prim_sample_audio()
         mfcc = prim_extract_mfcc(sig)
         assert isinstance(mfcc, str)
         assert "Energy" in mfcc
-        assert "centroid" in mfcc.lower() or "Centroid" in mfcc
+        assert "centroid" in mfcc.lower()
 
     def test_full_features_structure(self):
-        """comp_extract_full_features 回傳完整的 AcousticFeatures。"""
+        """`comp_extract_full_features` should return a complete feature bundle."""
         sig = prim_sample_audio(duration_ms=32.0)
         f = comp_extract_full_features(sig)
         assert isinstance(f.snr_db, float)
@@ -175,20 +170,17 @@ class TestL3AcousticFeatures:
         assert len(f.mfcc_summary) > 10
 
     def test_full_features_broadband_vs_tonal(self):
-        """寬頻噪音 vs 純音應產生不同的 spectral centroid。"""
+        """Broadband noise and a pure tone should yield different centroids."""
         tone_sig = make_signal(make_tone(200, 0.1))
         noise_sig = make_signal(make_noise(0.1))
         f_tone = comp_extract_full_features(tone_sig)
         f_noise = comp_extract_full_features(noise_sig)
-        # 純音 centroid 應接近 200Hz，噪音 centroid 應更高
         assert f_tone.spectral_centroid_hz < f_noise.spectral_centroid_hz * 1.5
 
 
-# ===== L6 Deterministic: NAL-NL2 Gain =====
-
 class TestL6DeterministicGain:
     def test_gain_params_structure(self):
-        """prim_generate_gain_params 回傳正確的結構。"""
+        """`prim_generate_gain_params` should return the expected structure."""
         audiogram = '{"250":30,"500":35,"1000":40,"2000":50,"4000":60}'
         gain = prim_generate_gain_params(audiogram, "market scene")
         assert "gain_per_frequency" in gain
@@ -197,52 +189,50 @@ class TestL6DeterministicGain:
         assert gain["deterministic"] is True
 
     def test_gain_increases_with_hearing_loss(self):
-        """聽損越嚴重的頻率，增益應越大。"""
+        """More severe hearing loss should map to larger gain."""
         audiogram = '{"250":10,"500":20,"1000":40,"2000":60,"4000":80}'
         gain = prim_generate_gain_params(audiogram, "quiet")
         gpf = gain["gain_per_frequency"]
-        # 4000Hz (80dB loss) 的增益應 > 250Hz (10dB loss)
-        assert gpf["4000"] > gpf["250"], \
+        assert gpf["4000"] > gpf["250"], (
             f"gain@4000={gpf['4000']} should be > gain@250={gpf['250']}"
+        )
 
     def test_compression_ratio_reasonable(self):
-        """壓縮比應在合理範圍 (1.0-4.0)。"""
+        """Compression ratio should stay within a plausible range."""
         audiogram = '{"250":30,"500":35,"1000":40,"2000":50,"4000":60}'
         gain = prim_generate_gain_params(audiogram, "market")
         cr = gain["compression_ratio"]
         assert 1.0 <= cr <= 4.0, f"compression_ratio={cr}, expected 1.0-4.0"
 
 
-# ===== Eval Scenarios: 連結 asir/eval/ 場景定義和音檔 =====
-
 SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scenarios"
 EVAL_EXAMPLES = create_eval_examples()
 
 
 class TestEvalScenarioConsistency:
-    """驗證 eval 場景定義和音檔的一致性。"""
+    """Validate consistency between eval scenarios and generated audio files."""
 
     def test_every_scenario_has_wav(self):
-        """每個 eval scenario 都應有對應的 WAV 檔。"""
+        """Each eval scenario should have a matching WAV file."""
         for ex in EVAL_EXAMPLES:
             wav = SCENARIO_DIR / f"{ex.scenario}.wav"
             assert wav.exists(), f"Missing WAV for scenario '{ex.scenario}': {wav}"
 
     def test_no_orphan_wavs(self):
-        """不該有沒對應 scenario 的 WAV 檔。"""
+        """There should be no scenario WAV without a matching eval definition."""
         scenario_names = {ex.scenario for ex in EVAL_EXAMPLES}
         for wav in SCENARIO_DIR.glob("*.wav"):
-            assert wav.stem in scenario_names, \
+            assert wav.stem in scenario_names, (
                 f"Orphan WAV '{wav.name}' has no matching eval scenario"
+            )
 
     def test_eval_examples_count(self):
-        """應有 10 個 eval 場景。"""
+        """The benchmark should define 10 eval scenarios."""
         assert len(EVAL_EXAMPLES) == 10
 
-    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
-                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES, ids=[e.scenario for e in EVAL_EXAMPLES])
     def test_eval_example_fields(self, ex):
-        """每個 eval example 都有必要的物理參數欄位。"""
+        """Each eval example should expose the required physical parameters."""
         assert hasattr(ex, "snr_db")
         assert hasattr(ex, "rt60_s")
         assert hasattr(ex, "n_active_sources")
@@ -252,12 +242,11 @@ class TestEvalScenarioConsistency:
 
 
 class TestEvalAudioL1L3:
-    """用 eval 場景的真實音檔跑 L1-L3，驗證管線不會崩潰且特徵合理。"""
+    """Run L1-L3 on real eval audio to ensure the deterministic stack is stable."""
 
-    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
-                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES, ids=[e.scenario for e in EVAL_EXAMPLES])
     def test_load_and_extract_features(self, ex):
-        """載入場景 WAV → L1-L3 特徵提取，驗證結構和值域。"""
+        """Load a scenario WAV and verify feature extraction stays well-formed."""
         wav = SCENARIO_DIR / f"{ex.scenario}.wav"
         if not wav.exists():
             pytest.skip(f"WAV not found: {wav}")
@@ -278,10 +267,9 @@ class TestEvalAudioL1L3:
         assert features.temporal_pattern in ("stationary", "modulated", "impulsive")
         assert len(features.mfcc_summary) > 10
 
-    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
-                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES, ids=[e.scenario for e in EVAL_EXAMPLES])
     def test_fft_and_beamform(self, ex):
-        """載入場景 WAV → FFT + beamform 不會崩潰。"""
+        """Load a scenario WAV and verify FFT plus beamforming do not break."""
         wav = SCENARIO_DIR / f"{ex.scenario}.wav"
         if not wav.exists():
             pytest.skip(f"WAV not found: {wav}")
@@ -298,10 +286,9 @@ class TestEvalAudioL1L3:
         assert len(bf) > 0
         assert np.all(np.isfinite(bf))
 
-    @pytest.mark.parametrize("ex", EVAL_EXAMPLES,
-                             ids=[e.scenario for e in EVAL_EXAMPLES])
+    @pytest.mark.parametrize("ex", EVAL_EXAMPLES, ids=[e.scenario for e in EVAL_EXAMPLES])
     def test_gain_params_for_scenario(self, ex):
-        """每個場景的 audiogram 都能算出合理增益。"""
+        """Each scenario audiogram should produce valid deterministic gain settings."""
         gain = prim_generate_gain_params(ex.audiogram_json, ex.scenario)
         assert gain["deterministic"] is True
         cr = gain["compression_ratio"]

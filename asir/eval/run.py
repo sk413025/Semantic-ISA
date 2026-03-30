@@ -1,11 +1,11 @@
 """
 ASIR Semantic Layer Evaluation (L4-L7)
 
-用法:
+Usage:
   PYTHONUTF8=1 python -X utf8 -m asir.eval
   PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
 
-結果記錄到 MLflow（mlflow ui 查看歷史與比較）。
+Results are logged to MLflow for history and comparison.
 """
 import sys
 import os
@@ -34,7 +34,7 @@ def _load_env():
 
 
 def build_features(ex):
-    """把 eval example 的物理參數轉成 AcousticFeatures，直接注入 L4。"""
+    """Convert eval-example physics into `AcousticFeatures` for direct L4 injection."""
     from asir.types import AcousticFeatures
 
     snr = float(ex.snr_db)
@@ -78,7 +78,7 @@ def _safe_float(val):
 
 
 def _build_trace(pred):
-    """從 prediction 提取結構化 trace dict，用於 console 印出和 MLflow 持久化。"""
+    """Extract a structured trace dict for console output and MLflow logging."""
     trace = {}
 
     percept = getattr(pred, 'percept', None)
@@ -137,7 +137,7 @@ def _serialize_checks(check_results):
 
 
 def _print_trace(scenario, trace, failures_for_scenario):
-    """印出場景的推理 trace，每個場景都呼叫。"""
+    """Print the reasoning trace for one scenario."""
     print(f"\n    ┌─ Trace: {scenario}")
 
     l4 = trace.get("L4", {})
@@ -179,7 +179,7 @@ def _print_trace(scenario, trace, failures_for_scenario):
 
 
 def run_eval(program=None):
-    """L4-L7 semantic evaluation — 直接呼叫 composites，繞過 harness。"""
+    """L4-L7 semantic evaluation using composites directly, bypassing the harness."""
     _load_env()
 
     import dspy
@@ -246,7 +246,7 @@ def run_eval(program=None):
             prefs = {"noise_tolerance": "medium", "processing_preference": "natural"}
             user_action = str(getattr(ex, 'user_action', 'none'))
 
-            # L7 偏好回饋：有 user_action 時呼叫 ParseIntent + UpdatePreferences
+            # L7 preference feedback: when user_action exists, update preferences.
             if user_action != "none":
                 from asir.primitives.intent import ParseIntentSig, UpdatePreferencesSig
                 with dspy.context(lm=strong_lm):

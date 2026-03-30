@@ -1,42 +1,43 @@
 from typing import Optional
+
 import dspy
 
 
 class ReasonAboutSceneSig(dspy.Signature):
     """
-    [PRIM] 第五層：場景推理（多模態版 v0.3）
-    BACKEND: LLM (需要強推理能力 — 建議用大模型)
+    [PRIM] Layer 5: scene reasoning (multimodal v0.3).
+    BACKEND: LLM (requires strong reasoning, so a larger model is recommended)
     RELIABILITY: situation_relevance >= 0.80
 
-    ★ 這是一條 Primitive，因為「理解場景」不能被分解為更小的
-      語義操作——它需要同時考慮所有感知維度並做跨維度推理。
+    Scene understanding is an irreducible primitive because it must reason
+    jointly over all perceptual dimensions. For example, deciding that metallic
+    transients help a user orient toward a market stall requires understanding
+    noise type, user context, and navigation needs at the same time.
 
-    例如：「金屬碰撞聲可幫助李伯伯定位攤位」這個判斷
-    需要同時理解噪音類型、使用者情境、和空間導航需求。
-
-    ★ v0.3: 頻譜圖提供視覺化的跨維度全景——
-      場景推理 LM 能一眼看到噪音、語音、環境聲的時頻結構。
+    In v0.3, the spectrogram provides a visual overview of cross-modal structure
+    so the scene-reasoning model can inspect noise, speech, and environmental
+    sound patterns at a glance.
     """
-    noise_description: str = dspy.InputField(desc="第四層噪音描述")
-    speech_description: str = dspy.InputField(desc="第四層語音描述")
-    environment_description: str = dspy.InputField(desc="第四層環境描述")
+
+    noise_description: str = dspy.InputField(desc="Layer-4 noise description")
+    speech_description: str = dspy.InputField(desc="Layer-4 speech description")
+    environment_description: str = dspy.InputField(desc="Layer-4 environment description")
     user_profile: str = dspy.InputField(
-        desc="使用者資料：年齡、聽損程度、偏好、當前活動"
+        desc="User profile: age, hearing loss, preferences, and current activity"
     )
     recent_scene_history: str = dspy.InputField(
-        desc="最近 N 個場景理解的摘要，用於連續性判斷"
+        desc="Summary of the most recent N scene inferences for continuity reasoning"
     )
-    # ★ Phase 3: 頻譜圖輔助場景推理（音訊太貴，只在 L4 直接聽）
     spectrogram: Optional[dspy.Image] = dspy.InputField(
-        desc="頻譜圖（輔助跨維度推理：同時看到噪音、語音、環境聲的時頻結構）",
-        default=None
+        desc="Spectrogram image that supports cross-dimensional reasoning over noise, speech, and environmental sound",
+        default=None,
     )
 
-    situation: str = dspy.OutputField(desc="完整場景敘述")
+    situation: str = dspy.OutputField(desc="Complete scene description")
     challenges_json: str = dspy.OutputField(
-        desc="JSON: 聲學挑戰列表，每個含 challenge/severity/physical_cause"
+        desc="JSON list of acoustic challenges, each containing challenge / severity / physical_cause"
     )
     preservation_notes_json: str = dspy.OutputField(
-        desc="JSON: 需要保留的環境聲線索列表（附保留理由）"
+        desc="JSON list of environmental cues that should be preserved, with reasons"
     )
-    confidence: float = dspy.OutputField(desc="場景理解信心度 [0,1]")
+    confidence: float = dspy.OutputField(desc="Scene-understanding confidence [0,1]")

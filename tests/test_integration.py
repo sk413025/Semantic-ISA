@@ -1,22 +1,29 @@
 """
-Integration Tests — 真實音檔 → 完整 L1-L7 Harness 管線
+Integration tests: real scenario audio through the full L1-L7 harness.
 
-需要 OPENAI_API_KEY + 場景 WAV 檔，沒有會自動 skip。
-用 asir/eval/ 的場景定義、音檔和 metrics 做端對端驗證。
-結果記錄到 MLflow (experiment: asir-integration-pytest)。
+These tests require `OPENAI_API_KEY` and scenario WAV files. When either is
+missing, the suite is skipped automatically.
 
-跑法:
+The tests reuse the scenario definitions, audio assets, and metrics from
+`asir/eval/`, and log summary artifacts to MLflow
+(`experiment: asir-integration-pytest`).
+
+Run with:
   PYTHONUTF8=1 python -X utf8 -m pytest tests/test_integration.py -v
 """
+
 import os
-import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 from asir.eval.examples import create_eval_examples
 from asir.eval.metrics import (
-    check_l4_perceptual, check_l5_scene,
-    check_l6_strategy, check_dsp_output, check_l7_routing,
+    check_dsp_output,
+    check_l4_perceptual,
+    check_l5_scene,
+    check_l6_strategy,
+    check_l7_routing,
     compute_score,
 )
 from asir.primitives.signal import prim_load_audio
@@ -27,13 +34,13 @@ SCENARIO_DIR = Path(__file__).parent.parent / "asir" / "eval" / "audio" / "scena
 
 
 def _load_env():
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    k, v = line.split('=', 1)
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
                     os.environ.setdefault(k.strip(), v.strip())
 
 
@@ -44,18 +51,18 @@ pytestmark = pytest.mark.skipif(
     reason="OPENAI_API_KEY not set — skip integration tests",
 )
 
-
 _cached_results = {}
 
 
 @pytest.fixture(scope="module")
 def all_results():
-    """Run full harness for all 10 scenarios with real audio, cache results."""
+    """Run the full harness once for all scenarios and cache the outputs."""
     if _cached_results:
         return _cached_results
 
     import dspy
     import mlflow
+
     from asir.harness import AcousticSemanticHarness
 
     api_key = os.environ["OPENAI_API_KEY"]
@@ -64,7 +71,9 @@ def all_results():
     dspy.configure(lm=fast_lm)
 
     harness = AcousticSemanticHarness(
-        fast_lm=fast_lm, strong_lm=strong_lm, enable_multimodal=True,
+        fast_lm=fast_lm,
+        strong_lm=strong_lm,
+        enable_multimodal=True,
     )
 
     for ex in EVAL_EXAMPLES:
@@ -78,7 +87,7 @@ def all_results():
         if isinstance(signal, tuple):
             signal = signal[0]
 
-        user_action = str(getattr(ex, 'user_action', 'none'))
+        user_action = str(getattr(ex, "user_action", "none"))
         result = harness(
             raw_signal=signal,
             user_action=user_action,
@@ -92,9 +101,9 @@ def all_results():
             strategy=result.strategy,
             dsp_params=result.dsp_params,
             execution_depth=str(
-                getattr(result, 'execution_depth', 'full')
+                getattr(result, "execution_depth", "full")
             ).strip().lower(),
-            current_preferences=getattr(result, 'current_preferences', None),
+            current_preferences=getattr(result, "current_preferences", None),
         )
 
         _cached_results[scenario] = {
@@ -109,16 +118,16 @@ def all_results():
             },
         }
 
-        # Reset harness state between scenarios
         harness.current_preferences = {
             "noise_tolerance": "medium",
             "processing_preference": "natural",
             "environment_awareness": "moderate",
-            "known_situations": ["菜市場: 增強正前方, 保留環境感"],
+            "known_situations": [
+                "wet market: enhance the front, preserve environmental awareness"
+            ],
         }
         harness.feedback_history = []
 
-    # Log to MLflow
     mlflow.set_experiment("asir-integration-pytest")
     with mlflow.start_run(run_name="pytest_integration"):
         all_failures = []
@@ -130,17 +139,19 @@ def all_results():
                 mlflow.log_metric(f"{scenario}_{layer}", score)
                 for check_name, (passed, detail) in checks.items():
                     if not passed:
-                        all_failures.append({
-                            "scenario": scenario, "layer": layer,
-                            "check": check_name, "detail": detail,
-                        })
+                        all_failures.append(
+                            {
+                                "scenario": scenario,
+                                "layer": layer,
+                                "check": check_name,
+                                "detail": detail,
+                            }
+                        )
         mlflow.log_metric("num_failures", len(all_failures))
         mlflow.log_dict({"failures": all_failures}, "pytest_integration_results.json")
 
     return _cached_results
 
-
-# ===== Per-layer tests =====
 
 class TestIntegrationL4:
     @pytest.mark.parametrize("scenario", SCENARIO_IDS)

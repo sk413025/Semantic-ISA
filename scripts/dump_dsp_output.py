@@ -1,4 +1,4 @@
-"""
+﻿"""
 Dump actual DSP output for wet_market_vendor scenario.
 Shows the real values the system produces so README can be corrected.
 
@@ -47,7 +47,7 @@ for scenario in ["wet_market_vendor", "market_too_muffled"]:
     if isinstance(signal, tuple):
         signal = signal[0]
 
-    user_action = "太悶了" if scenario == "market_too_muffled" else "none"
+    user_action = "too muffled" if scenario == "market_too_muffled" else "none"
     print(f"\n{'='*60}")
     print(f"  Scenario: {scenario}")
     print(f"  user_action: {user_action}")
@@ -56,7 +56,7 @@ for scenario in ["wet_market_vendor", "market_too_muffled"]:
     result = harness(
         raw_signal=signal,
         user_action=user_action,
-        user_profile="72歲男性，雙耳中度感音神經性聽損，偏好自然聲",
+        user_profile="72-year-old man with bilateral moderate sensorineural hearing loss who prefers natural sound",
         audiogram_json='{"250":30,"500":35,"1000":40,"2000":50,"4000":60}',
     )
 
@@ -100,6 +100,7 @@ for scenario in ["wet_market_vendor", "market_too_muffled"]:
         "noise_tolerance": "medium",
         "processing_preference": "natural",
         "environment_awareness": "moderate",
-        "known_situations": ["菜市場: 增強正前方, 保留環境感"]
+        "known_situations": ["wet market: enhance the front, preserve environmental awareness"]
     }
     harness.feedback_history = []
+

@@ -1,113 +1,130 @@
 # AGENTS.md — Cross-Tool Agent Instructions
 
-**不要過度工程化。** 能用一行解決就不要寫三行。不要加「以後可能用到」的抽象、工具、框架。先做最簡單的方案，只在證明不夠時才加複雜度。加功能前先查 DSPy 和 MLflow 是否已內建支援——不要重複造輪子。
+**Do not over-engineer.** If one line solves the problem, do not write three.
+Avoid abstractions, tools, or frameworks that only exist for hypothetical future
+needs. Start with the simplest solution and add complexity only when the simple
+version is proven insufficient. Before adding a feature, check whether DSPy or
+MLflow already provides it so you do not rebuild something that already exists.
 
-This file provides context for AI coding agents (Claude Code, Codex, etc.).
+This file provides context for AI coding agents such as Claude Code or Codex.
 
 ## Repository Purpose
 
-ASIR (Acoustic Semantic Instruction Register) is a 7-layer semantic IR
-for hearing aids. It uses DSPy modules + GEPA optimizer to convert raw
-audio into optimized DSP parameters through LLM-powered reasoning.
+ASIR (Acoustic Semantic Instruction Register) is a 7-layer semantic IR for
+hearing aids. It uses DSPy modules plus GEPA optimization to convert raw audio
+into optimized DSP parameters through LLM-powered reasoning.
 
-**使用情境**：助聽器在複雜場景（菜市場、多人對話）需動態調整 DSP。
-傳統固定規則不懂語意，ASIR 用 LLM 理解場景後再決定 DSP 參數。
+**Use case:** hearing devices need to adapt DSP dynamically in complex
+soundscapes such as wet markets or multi-speaker conversations. Fixed-rule DSP
+does not understand semantics; ASIR uses LLM reasoning to interpret the scene
+before choosing DSP parameters.
 
 **I/O** (`harness.forward()`):
-- Input: `RawSignal`(2-ch PCM) + `user_action` + `audiogram_json` + `user_profile`
-- Output: `DSPParameterSet`(beam_weights, noise_mask, filter_coeffs, compression) + execution_depth + 語意中間結果
+- Input: `RawSignal` (2-ch PCM) + `user_action` + `audiogram_json` + `user_profile`
+- Output: `DSPParameterSet` (`beam_weights`, `noise_mask`, `filter_coeffs`,
+  `compression_ratio`) + `execution_depth` + semantic intermediate results
 
 ## File Organization
 
-- Every `.py` file is < 500 lines
-- One concept per file
-- All imports are explicit (no wildcard imports)
-- Types, primitives, routing, composites are cleanly separated
+- Every `.py` file is under 500 lines.
+- One concept per file.
+- Imports are explicit.
+- Types, primitives, routing, and composites stay clearly separated.
 
 ## Critical Invariants
 
-1. L1-L3 are **deterministic** (numpy only, no LLM calls)
-2. L4-L7 use **dspy.ChainOfThought** with typed Signatures
-3. Routing predictors (Method A) are the primary GEPA optimization targets
-4. `harness.py` is the only file that orchestrates cross-layer execution
-5. `gepa/metric.py` encodes all physics/audiology constraints as text feedback
+1. L1-L3 are **deterministic** (`numpy` only, no LLM calls).
+2. L4-L7 use **`dspy.ChainOfThought`** with typed Signatures.
+3. Routing predictors (Method A) are the primary GEPA optimization targets.
+4. `harness.py` is the only file that orchestrates cross-layer execution.
+5. `gepa/metric.py` encodes all physics and audiology constraints as text feedback.
 
 ## Running the Project
 
 ```bash
-# 完整 demo（L1-L7 語意推理 + 使用者回饋，需要 OPENAI_API_KEY）
+# Full demo (L1-L7 semantic reasoning + user feedback, requires OPENAI_API_KEY)
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo
 
-# 只跑確定性層（不需要 API key）
+# Deterministic layers only (no API key required)
 PYTHONUTF8=1 python -X utf8 -m examples.run_demo --l1-l3
 ```
 
-## Testing & Evaluation
+## Testing and Evaluation
 
-**依序執行：**
+**Run in this order:**
 
 ```bash
-# Step 0: 合成 10 個場景測試音檔（只需跑一次，存在 asir/eval/audio/scenarios/）
+# Step 0: generate 10 scenario test WAV files (run once)
 PYTHONUTF8=1 python -X utf8 -m asir.eval.generate_audio
 
-# Step 1: L1-L3 + 場景一致性 pytest（no API key, 60 tests, ~10s）
-#   驗證: 確定性管線 + 10 場景 WAV 載入 + eval examples 與 WAV 檔 1:1 對應
-#   ★ 無 LLM 推理，不產生推理 trace
+# Step 1: L1-L3 + scenario consistency pytest (no API key, 60 tests, ~10s)
+#   Verifies deterministic pipeline + 10 scenario WAV loads +
+#   1:1 alignment between eval examples and WAV files
+#   No LLM reasoning, so no reasoning trace is produced
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_deterministic.py -v
 
-# Step 2: L4-L7 語意推理 pytest（needs OPENAI_API_KEY, 52 tests, ~2min）
-#   驗證: 10 場景 × 5 層 + 菜市場 E9/E10 比較
-#   ★ 推理 trace 記錄到 MLflow (experiment: asir-eval-pytest)
+# Step 2: L4-L7 semantic reasoning pytest (needs OPENAI_API_KEY, 52 tests, ~2 min)
+#   Verifies 10 scenarios × 5 layers + the wet-market E9/E10 pair
+#   Reasoning traces are logged to MLflow (experiment: asir-eval-pytest)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_semantic.py -v
 
-# Step 3: Integration 端對端 pytest（needs OPENAI_API_KEY, 50 tests, ~10min）
-#   驗證: 真實音檔 → 完整 harness → 每層 metrics check
-#   ★ 推理 trace 記錄到 MLflow (experiment: asir-integration-pytest)
+# Step 3: end-to-end integration pytest (needs OPENAI_API_KEY, 50 tests, ~10 min)
+#   Verifies real audio -> full harness -> per-layer metrics checks
+#   Reasoning traces are logged to MLflow (experiment: asir-integration-pytest)
 PYTHONUTF8=1 python -X utf8 -m pytest tests/test_integration.py -v
 
-# 或者用 standalone eval runners（同樣邏輯，更詳細的 console trace 輸出）
+# Or use standalone eval runners for the same logic with richer console traces
 PYTHONUTF8=1 python -X utf8 -m asir.eval
 PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
 ```
 
-**所有 LLM 推理結果記錄到 MLflow。** 查看歷史與比較：`mlflow ui`
+**All LLM reasoning outputs are recorded to MLflow.** Inspect history and
+compare runs with `mlflow ui`.
 
-### 跑完之後去哪裡看推理過程
+### Where to Inspect Reasoning Traces
 
-| 跑了什麼 | 推理 trace 在哪 | 怎麼看 |
-|----------|----------------|--------|
-| `test_deterministic.py` | 無（L1-L3 確定性，無 LLM） | 看 console output |
+| What you ran | Where the trace lives | How to inspect it |
+|---|---|---|
+| `test_deterministic.py` | none (L1-L3 is deterministic) | console output |
 | `test_semantic.py` | MLflow `asir-eval-pytest` → `pytest_eval_results.json` | `mlflow ui` |
 | `test_integration.py` | MLflow `asir-integration-pytest` → `pytest_integration_results.json` | `mlflow ui` |
 | `run_demo` | MLflow `asir-demo` → `demo_trace.json` | `mlflow ui` |
-| `asir.eval` | MLflow `asir-eval` → `eval_results.json` | `mlflow ui` 或 `download_artifacts("eval_results.json")` |
+| `asir.eval` | MLflow `asir-eval` → `eval_results.json` | `mlflow ui` or `download_artifacts("eval_results.json")` |
 | `asir.eval --integration` | MLflow `asir-eval` → `integration_results.json` | `mlflow ui` |
 
-**跑完 eval 後，讀 MLflow artifact 中的 trace 判讀每層推理是否合理，不要只看分數。**
+After running eval, read the structured trace in the MLflow artifact to judge
+whether each layer's reasoning is sensible. Do not look at scores only.
 
-**Agent 自動判讀規範：**
-- eval 跑完後，用 `mlflow.search_runs()` + `download_artifacts("eval_results.json")` 讀取結構化 trace
-- 逐場景檢查：L4 噪音描述是否反映 SNR、L5 場景是否合理、L6 NR 是否匹配噪音程度、L7 偏好是否正確更新
-- 判斷失敗原因：**LLM 推理偏差**（→ GEPA 優化目標，不改 code）vs **程式邏輯 bug**（→ 需要修 code）
-- 不要只報「2 failures」——要說明失敗的具體原因和是否需要行動
+**Agent interpretation policy**
+- After eval finishes, use `mlflow.search_runs()` plus
+  `download_artifacts("eval_results.json")` to read structured traces.
+- Check each scenario layer by layer: whether L4 noise descriptions reflect SNR,
+  whether L5 scene interpretations are plausible, whether L6 NR matches the
+  noise level, and whether L7 updates preferences correctly.
+- Separate **LLM reasoning drift** (a GEPA optimization target, not necessarily a
+  code bug) from **program logic bugs** (which require code changes).
+- Do not just report "2 failures." Explain why they failed and whether action is
+  needed.
 
-### Trace — 每場景推理鏈
+### Trace: Per-Scenario Reasoning Chain
 
-每個場景自動印出 L4→L5→L6→DSP→L7 推理鏈（不需要額外 flag）。
-Trace 包含完整推理內容，同時存到 MLflow artifacts。
+Every scenario prints an L4 → L5 → L6 → DSP → L7 reasoning chain automatically.
+The same trace is also stored in MLflow artifacts.
 
-即使 check 全部 pass，數值可能仍不合理（如安靜場景 NR=0.7）。
-Trace 讓人（或 agent）目視確認推理是否符合場景特性。
+Even if every check passes, outputs may still be unreasonable
+(for example, `NR=0.7` in a quiet scene). Use the trace to confirm that the
+reasoning matches the acoustic conditions.
 
-### GEPA 優化
+### GEPA Optimization
 
 ```bash
 PYTHONUTF8=1 OPENAI_API_KEY=sk-xxx python -X utf8 -m examples.run_demo --gepa
 ```
 
-GEPA 完成後自動存檔到 `programs/gepa_{timestamp}/`，MLflow 記錄完整優化過程。
+GEPA automatically saves optimized programs to `programs/gepa_{timestamp}/`,
+and MLflow records the full optimization process.
 
-### 載入優化後的 Program
+### Loading an Optimized Program
 
 ```bash
 PYTHONUTF8=1 python -X utf8 -m asir.eval --program programs/gepa_xxx/program.json
@@ -116,57 +133,64 @@ PYTHONUTF8=1 python -X utf8 -m asir.eval --integration --program programs/gepa_x
 
 ### Eval Scenarios and README Alignment
 
-10 個 eval 場景定義在 `asir/eval/examples.py`，其中兩個直接對應 README 的旗艦展示：
+The 10 evaluation scenarios are defined in `asir/eval/examples.py`. Two of them
+map directly to the flagship README examples:
 
-| Scenario | 對應 README | 驗證重點 |
-|----------|-----------|---------|
-| `wet_market_vendor` | "場景範例：菜市場" | SNR=0dB 極吵 → 強降噪 + 波束聚焦 |
-| `market_too_muffled` | "使用者回饋：太悶了" | user_action="太悶了" → 降低降噪 + 偏好持久化 |
+| Scenario | README section | Validation focus |
+|---|---|---|
+| `wet_market_vendor` | "Example Scenario: Wet Market Conversation" | extreme noise at SNR=0 dB → strong NR + forward beam focus |
+| `market_too_muffled` | "User feedback: too muffled" | `user_action="too muffled"` → reduce NR + persist preferences |
 
-**如果你改了 README 的場景描述，eval 也要對應更新（反之亦然）。**
+If you change the README scenario description, update the eval scenario too, and
+vice versa.
 
 ### Interpreting Eval Results
 
-eval 分數受 LLM 非確定性影響，每次跑會有 ±5% 波動。
+Eval scores vary by about ±5% because of LLM nondeterminism.
 
-**已知 GEPA 優化目標（不是 bug）：**
-- L6 `nr_matches_scene` — NR aggressiveness 有時低於 0.4 threshold
-- DSP `beam_appropriate` — 安靜場景 LLM 有時給窄波束（應該給寬波束）
+**Known GEPA optimization targets (not bugs)**
+- L6 `nr_matches_scene` — NR aggressiveness sometimes falls below the `0.4`
+  threshold.
+- DSP `beam_appropriate` — the LLM sometimes chooses a narrow beam in quiet
+  scenes where a wider beam would be more appropriate.
 
-**真正需要修的 bug 特徵：** 同一個 check **每次跑都失敗**，且原因是程式邏輯錯誤。
+**A real bug signature:** the same check fails every run for a logic reason.
 
-### Key Behavior: user_action and Preferences
+### Key Behavior: `user_action` and Preferences
 
-`harness.py` 對任何 `user_action != "none"` 都呼叫 `UpdatePreferencesSig`。
-LLM 語意決定偏好要不要改，沒有硬編碼 keyword 判斷。
+`harness.py` calls `UpdatePreferencesSig` for any `user_action != "none"`.
+The LLM decides semantically whether preferences should change; there is no
+hard-coded keyword rule.
 
 ## Test Audio Files
 
-`asir/eval/audio/` — eval 的 code 和資料在同一個目錄下：
-```
+`asir/eval/audio/` keeps evaluation code and data in one place:
+
+```text
 asir/eval/audio/
 ├── audio1.wav, audio2.wav     # Gemini TTS samples (24kHz mono)
-├── speech/                    # Clean speech clips (16kHz mono)
-├── noise/                     # (Optional) DEMAND dataset noise clips
-└── scenarios/                 # Mixed scenario audio (stereo 16kHz, 5s each)
+├── speech/                    # clean speech clips (16kHz mono)
+├── noise/                     # optional DEMAND dataset noise clips
+└── scenarios/                 # mixed scenario audio (stereo 16kHz, 5s each)
 ```
 
 Generator: `asir/eval/generate_audio.py`
-WAV 檔案使用 Git LFS 追蹤。
+
+WAV files are tracked with Git LFS.
 
 ## Common Tasks
 
-- **Add new Signature**: Create in `asir/primitives/`, export in `__init__.py`
-- **Add routing logic**: Create in `asir/routing/`, wire in composite
-- **Modify GEPA feedback**: Edit `asir/gepa/metric.py`
-- **Change pipeline flow**: Edit `asir/harness.py`
-- **Add new eval scenario**: 改 `examples.py` + `generate_audio.py`，跑 generate + eval
-- **Debug eval failure**: 看 trace 輸出或 `mlflow ui` 查看歷史 artifacts
+- **Add a new Signature**: create it in `asir/primitives/` and export it in `__init__.py`
+- **Add routing logic**: create it in `asir/routing/` and wire it into the composite
+- **Modify GEPA feedback**: edit `asir/gepa/metric.py`
+- **Change pipeline flow**: edit `asir/harness.py`
+- **Add a new eval scenario**: update `examples.py` and `generate_audio.py`, then rerun generation and eval
+- **Debug an eval failure**: inspect trace output or MLflow artifacts with `mlflow ui`
 
 ## Artifact Directories
 
-```
-mlruns/               # MLflow 追蹤（eval + GEPA 結果，mlflow ui 查看）
-runs/                 # GEPA 優化過程日誌
-programs/             # 優化後的 program 存檔
+```text
+mlruns/               # MLflow tracking (eval + GEPA results)
+runs/                 # GEPA optimization logs
+programs/             # saved optimized programs
 ```

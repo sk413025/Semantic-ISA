@@ -5,16 +5,16 @@ import dspy
 def create_acoustic_feedback_metric(gold, pred, trace=None,
                                      pred_name=None, pred_trace=None):
     """
-    GEPA 的 feedback metric — 這是整個系統的「可靠性契約」
+    GEPA feedback metric that acts as the system's reliability contract.
 
-    回傳邏輯：
-    - 不管有沒有 pred_name，score 都以 module-level（全管線）為準
-    - pred_name 存在時，回傳針對該 predictor 的文字 feedback
-      （GEPA 用 feedback 做 reflection，不用 predictor-level score）
+    Return behavior:
+    - the score is always computed at module level for the full pipeline
+    - when `pred_name` is present, additional predictor-specific feedback is
+      returned for GEPA reflection, without changing the module-level score
     """
     import json
 
-    # ===== 先算 module-level score（全管線）=====
+    # ===== First compute the module-level score for the full pipeline =====
     module_score = 0.0
     module_feedback = []
 
@@ -57,7 +57,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
 
     module_score = min(module_score, 1.0)
 
-    # ===== 如果 GEPA 要求 predictor-level feedback =====
+    # ===== If GEPA requests predictor-level feedback =====
     if pred_name:
         pred_feedback = []
 
@@ -140,10 +140,10 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                         "Natural preference typically maps to 0.3-0.5."
                     )
 
-        # ★ 新增：Routing Predictor feedback ★
+        # Routing predictor feedback
 
         elif "aggregate_router" in pred_name:
-            # L4 聚合路由的 feedback
+            # L4 aggregation-routing feedback
             if hasattr(pred, 'noise_weight'):
                 try:
                     nw = float(pred.noise_weight)
@@ -182,7 +182,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                     pass
 
         elif "scene_router" in pred_name:
-            # L5 場景路由的 feedback
+            # L5 scene-routing feedback
             if hasattr(pred, 'should_resolve'):
                 if hasattr(pred, 'history_length'):
                     try:
@@ -211,7 +211,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                 pred_feedback.append("Scene routing decision looks reasonable.")
 
         elif "strategy_planner" in pred_name:
-            # L6 前置規劃的 feedback
+            # L6 front-end planning feedback
             if hasattr(pred, 'primary_challenge'):
                 challenge = str(pred.primary_challenge).strip()
                 valid_challenges = {'directional_noise', 'diffuse_noise',
@@ -236,7 +236,8 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                 budget = str(pred.aggressiveness_budget).strip()
                 if hasattr(gold, 'user_prefs_natural') and gold.user_prefs_natural:
                     if budget == 'aggressive':
-                        # 除非使用者不滿意，否則偏好自然的人不該用 aggressive
+                        # Unless the user is dissatisfied, a natural-sound profile
+                        # should not receive an aggressive budget.
                         if hasattr(gold, 'user_action') and str(gold.user_action) == 'none':
                             pred_feedback.append(
                                 "User prefers natural sound but budget='aggressive'. "
@@ -253,7 +254,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                 pred_feedback.append("Strategy planning looks reasonable.")
 
         elif "strategy_integrator" in pred_name:
-            # L6 後置整合的 feedback
+            # L6 back-end integration feedback
             if hasattr(pred, 'adjusted_nr_aggressiveness'):
                 try:
                     agg = float(pred.adjusted_nr_aggressiveness)
@@ -284,7 +285,7 @@ def create_acoustic_feedback_metric(gold, pred, trace=None,
                 pred_feedback.append("Strategy integration looks reasonable.")
 
         elif "pipeline_router" in pred_name:
-            # 頂層管線路由的 feedback
+            # Top-level pipeline-routing feedback
             if hasattr(pred, 'execution_depth'):
                 depth = str(pred.execution_depth).strip().lower()
                 valid_depths = {'fast', 'medium', 'full'}

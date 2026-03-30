@@ -1,7 +1,7 @@
-"""
+﻿"""
 ASIR Integration Evaluation — End-to-End with Real Audio
 
-用法:
+Usage:
   PYTHONUTF8=1 python -X utf8 -m asir.eval --integration
   PYTHONUTF8=1 python -X utf8 -m asir.eval --integration --program programs/gepa_xxx/program.json
 
@@ -9,7 +9,7 @@ Prerequisites:
   1. Generate test audio: python -m asir.eval.generate_audio
   2. OPENAI_API_KEY in .env
 
-結果記錄到 MLflow（mlflow ui 查看歷史與比較）。
+Results are logged to MLflow for history and comparison.
 """
 import os
 import sys
@@ -61,7 +61,7 @@ def _safe_float(val):
 
 
 def _build_trace(pred):
-    """從 prediction 提取結構化 trace dict，用於 console 印出和 MLflow 持久化。"""
+    """Extract a structured trace dict for console output and MLflow logging."""
     trace = {}
 
     percept = getattr(pred, 'percept', None)
@@ -337,12 +337,12 @@ def test_end_to_end(examples, harness=None):
                 "check": "execution", "detail": str(e)[:200],
             })
 
-        # 重置 harness 狀態，避免場景間偏好累積
+        # Reset harness state so preferences do not accumulate across scenarios.
         harness.current_preferences = {
             "noise_tolerance": "medium",
             "processing_preference": "natural",
             "environment_awareness": "moderate",
-            "known_situations": ["菜市場: 增強正前方, 保留環境感"]
+            "known_situations": ["wet market: enhance the front, preserve environmental awareness"]
         }
         harness.feedback_history = []
 
@@ -428,3 +428,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

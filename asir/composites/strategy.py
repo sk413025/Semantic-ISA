@@ -1,79 +1,84 @@
 import dspy
+
 from asir.primitives.strategy import (
-    GenerateBeamformingParamsSig, GenerateNoiseReductionParamsSig,
+    GenerateBeamformingParamsSig,
+    GenerateNoiseReductionParamsSig,
     prim_generate_gain_params,
 )
-from asir.routing.strategy import StrategyPlanSig, StrategyIntegrateSig
+from asir.routing.strategy import StrategyIntegrateSig, StrategyPlanSig
 
 
 class GenerateFullStrategy(dspy.Module):
     """
-    [COMP] 第六層：完整策略生成
-    = ★ strategy_planner → gen_beam + gen_nr + gain → ★ strategy_integrator
+    [COMP] Layer 6: full strategy generation.
+    = strategy_planner -> gen_beam + gen_nr + gain -> strategy_integrator
 
-    改造前：beam 和 NR 互不知道對方、confidence 公式離譜
-    改造後：
-      Phase 1 — planner 規劃協作方式，注入 enriched context
-      Phase 2 — beam/NR/gain 執行（beam 和 NR 共享協作指令）
-      Phase 3 — integrator 檢查衝突、微調、計算信心度
+    Before the refactor, beamforming and noise reduction had no shared view of
+    the plan, and the confidence logic was brittle. Now:
+      Phase 1 -> the planner defines coordination and injects enriched context
+      Phase 2 -> beam / NR / gain run, with beam and NR sharing the plan
+      Phase 3 -> the integrator checks conflicts, fine-tunes, and scores confidence
     """
+
     def __init__(self):
         super().__init__()
-        # 原有 PRIM（prompt 不動）
+        # Original PRIMs, keeping their prompts intact.
         self.gen_beam = dspy.ChainOfThought(GenerateBeamformingParamsSig)
         self.gen_nr = dspy.ChainOfThought(GenerateNoiseReductionParamsSig)
-        # ★ 新增：前置規劃 + 後置整合
+        # New pre-planning and post-integration routing modules.
         self.strategy_planner = dspy.ChainOfThought(StrategyPlanSig)
         self.strategy_integrator = dspy.ChainOfThought(StrategyIntegrateSig)
 
-    def forward(self, scene: dspy.Prediction, user_prefs_str: str,
-                audiogram_json: str) -> dspy.Prediction:
+    def forward(
+        self,
+        scene: dspy.Prediction,
+        user_prefs_str: str,
+        audiogram_json: str,
+    ) -> dspy.Prediction:
         scene_str = (
             f"Situation: {scene.situation}\n"
             f"Challenges: {scene.challenges_json}\n"
             f"Preservation notes: {scene.preservation_notes_json}"
         )
 
-        # === Phase 1: 前置規劃 — planner 永遠執行 ===
+        # Phase 1: planner always runs first.
         plan = self.strategy_planner(
             scene_situation=scene.situation,
             scene_challenges=scene.challenges_json,
             user_preferences=user_prefs_str,
-            mic_geometry="BTE hearing aid, 2 mics, 10mm spacing, linear array"
+            mic_geometry="BTE hearing aid, 2 mics, 10mm spacing, linear array",
         )
 
-        # ★ 把規劃結果注入 PRIM 的 context — 讓 beam 和 NR 知道彼此的大方向
+        # Inject the coordination plan into downstream PRIM context so beam and NR stay aligned.
         enriched_scene_str = (
             f"{scene_str}\n"
             f"[Coordination Plan] {plan.beam_nr_coordination}\n"
             f"[Aggressiveness Budget] {plan.aggressiveness_budget}"
         )
 
-        # === Phase 2: 三個 PRIM 執行（各自獨立 try/except）===
-        # ★ 修復：gen_beam 和 gen_nr 失敗時用 PRIM 級 fallback，
-        #   不再讓整個 Composite fallback — 確保 planner/integrator 有 trace
-
+        # Phase 2: run the three PRIMs with independent fallback handling.
+        # If beam or NR fails, use a PRIM-level fallback rather than collapsing the whole composite.
         beam_used_fallback = False
         try:
             beam_result = self.gen_beam(
                 scene_understanding=enriched_scene_str,
-                mic_geometry="BTE hearing aid, 2 mics, 10mm spacing, linear array"
+                mic_geometry="BTE hearing aid, 2 mics, 10mm spacing, linear array",
             )
         except Exception as e:
             beam_used_fallback = True
             beam_result = dspy.Prediction(
                 target_azimuth_deg=0.0,
                 beam_width_deg=60.0,
-                null_directions_json='[]',
+                null_directions_json="[]",
                 reasoning=f"[FALLBACK] gen_beam failed: {str(e)[:100]}. "
-                          "Using safe defaults: front-facing, wide beam."
+                "Using safe defaults: front-facing, wide beam.",
             )
 
         nr_used_fallback = False
         try:
             nr_result = self.gen_nr(
                 scene_understanding=enriched_scene_str,
-                user_preferences=user_prefs_str
+                user_preferences=user_prefs_str,
             )
         except Exception as e:
             nr_used_fallback = True
@@ -82,15 +87,13 @@ class GenerateFullStrategy(dspy.Module):
                 aggressiveness=0.5,
                 preserve_bands_json='["low-frequency environmental"]',
                 reasoning=f"[FALLBACK] gen_nr failed: {str(e)[:100]}. "
-                          "Using safe defaults: wiener, moderate aggressiveness."
+                "Using safe defaults: wiener, moderate aggressiveness.",
             )
 
-        # Deterministic Primitive: 增益（永遠成功）
+        # Deterministic primitive: gain generation should always succeed.
         gain_result = prim_generate_gain_params(audiogram_json, scene_str)
 
-        # === Phase 3: 後置整合 — integrator 永遠執行 ===
-        # ★ 即使 beam/NR 用了 fallback，integrator 仍然執行
-        #   它能看到 [FALLBACK] 標記，做出合理的信心度判斷
+        # Phase 3: the integrator always runs, even if beam or NR used fallback outputs.
         integration = self.strategy_integrator(
             beam_summary=(
                 f"azimuth={beam_result.target_azimuth_deg}°, "
@@ -111,27 +114,27 @@ class GenerateFullStrategy(dspy.Module):
                 f"compression={gain_result['compression_ratio']}"
             ),
             coordination_plan=plan.beam_nr_coordination,
-            user_preferences=user_prefs_str
+            user_preferences=user_prefs_str,
         )
 
-        # ★ NR aggressiveness 可能被 integrator 微調
+        # NR aggressiveness may be fine-tuned by the integrator.
         try:
             final_nr_agg = float(integration.adjusted_nr_aggressiveness)
-            final_nr_agg = max(0.0, min(1.0, final_nr_agg))  # clamp to [0,1]
+            final_nr_agg = max(0.0, min(1.0, final_nr_agg))
         except (ValueError, TypeError):
             final_nr_agg = float(nr_result.aggressiveness)
 
         combined_reasoning = (
             f"[Plan] {plan.planning_reasoning}\n"
             f"[Beam] {beam_result.reasoning}"
-            f"{' ⚠️ FALLBACK' if beam_used_fallback else ''}\n"
+            f"{' FALLBACK' if beam_used_fallback else ''}\n"
             f"[NR] {nr_result.reasoning}"
-            f"{' ⚠️ FALLBACK' if nr_used_fallback else ''}\n"
+            f"{' FALLBACK' if nr_used_fallback else ''}\n"
             f"[Gain] deterministic NAL-NL2, compression={gain_result['compression_ratio']}\n"
             f"[Integration] {integration.integration_reasoning}"
         )
 
-        # ★ 如果用了 fallback，整體信心度打折
+        # Discount the final confidence if any fallback was used.
         try:
             base_confidence = float(integration.overall_confidence)
         except (ValueError, TypeError):
@@ -155,5 +158,5 @@ class GenerateFullStrategy(dspy.Module):
             primary_challenge=plan.primary_challenge,
             aggressiveness_budget=plan.aggressiveness_budget,
             beam_used_fallback=beam_used_fallback,
-            nr_used_fallback=nr_used_fallback
+            nr_used_fallback=nr_used_fallback,
         )
